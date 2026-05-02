@@ -34,6 +34,35 @@ const wordRows = [
   ["rico", "lekker"]
 ];
 
+const VOCAB_SYNC_KEY = "taalreis_vocab_latest";
+
+function normalizePair(spanish: string, dutch: string) {
+  return `${spanish.trim().toLowerCase()}::${dutch.trim().toLowerCase()}`;
+}
+
+function sanitizeRows(rows: string[][]) {
+  const seen = new Set<string>();
+  const unique: string[][] = [];
+
+  rows.forEach((row) => {
+    const spanish = (row[0] ?? "").trim();
+    const dutch = (row[1] ?? "").trim();
+
+    if (!spanish || !dutch) {
+      return;
+    }
+
+    const key = normalizePair(spanish, dutch);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    unique.push([spanish, dutch]);
+  });
+
+  return unique;
+}
+
 const reviewSessions = [
   { datum: "2 mei 2026, 14:30", type: "Leesvaardigheid", score: "3/3", kleur: T.accent },
   { datum: "1 mei 2026, 09:15", type: "Schrijfvaardigheid", score: "Voltooid", kleur: "#6B8FBF" },
@@ -1223,7 +1252,7 @@ function ChapterScreen({
   const [uploadState, setUploadState] = useState<"idle" | "drop" | "loading" | "confirm">("idle");
   const [exercise, setExercise] = useState<string | null>(null);
   const [loadingPct, setLoadingPct] = useState(0);
-  const [rows, setRows] = useState<string[][]>(wordRows);
+  const [rows, setRows] = useState<string[][]>([]);
 
   useEffect(() => {
     if (uploadState !== "loading") {
@@ -2000,6 +2029,18 @@ function VocabularyPanel({
   rows: string[][];
   setRows: (rows: string[][] | ((current: string[][]) => string[][])) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const sanitized = sanitizeRows(rows);
+      window.localStorage.setItem(VOCAB_SYNC_KEY, JSON.stringify({ savedAt: new Date().toISOString(), rows: sanitized }));
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [rows]);
+
   if (uploadState === "drop") {
     return (
       <div>
@@ -2021,9 +2062,40 @@ function VocabularyPanel({
             Sleep een foto of scan hierheen
           </div>
           <div style={{ fontSize: T.fs.sm, color: T.textSec, marginBottom: 16 }}>
-            of klik om een bestand te kiezen — PNG, JPG, PDF
+            of klik om een bestand te kiezen — PNG, TXT
           </div>
-          <button style={S.btn("primary")}>Bestand kiezen</button>
+          <button style={S.btn("primary")} onClick={() => fileInputRef.current?.click()}>
+            Bestand kiezen
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.png"
+            style={{ display: "none" }}
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              setErrorMessage(null);
+
+              if (file.name.toLowerCase().endsWith(".txt")) {
+                const text = await file.text();
+                const parsedRows = text
+                  .split(/\r?\n/)
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .map((line) => line.split(";").map((part) => part.trim()))
+                  .filter((parts) => parts.length === 2) as string[][];
+                setRows((current) => sanitizeRows([...current, ...parsedRows]));
+                setUploadState("idle");
+                return;
+              }
+
+              if (file.name.toLowerCase().endsWith(".png")) {
+                setErrorMessage("PNG kon niet betrouwbaar worden uitgelezen. Probeer een scherpere scan of upload een .txt-bestand.");
+                setUploadState("idle");
+              }
+            }}
+          />
         </div>
         <button style={S.btn("default")} onClick={() => setUploadState("idle")}>
           Annuleren
@@ -2096,16 +2168,51 @@ function VocabularyPanel({
     );
   }
 
+  const lastIndex = rows.length - 1;
+
   return (
     <div>
       <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
         <button style={S.btn("primary")} onClick={() => setUploadState("drop")}>
           ↑ Uploaden
         </button>
-        <button style={S.btn("ghost")} onClick={() => setRows((current) => [...current, ["", ""]])}>+ Handmatig toevoegen</button>
+        <button
+          style={S.btn("ghost")}
+          onClick={() => {
+            setIsEditing(true);
+            if (rows.length === 0) {
+              setRows([["", ""]]);
+            }
+          }}
+        >
+          ✏️ Bewerk
+        </button>
+        <button
+          style={S.btn("ghost")}
+          onClick={() => {
+            setRows((current) => sanitizeRows(current));
+            setIsEditing(false);
+          }}
+        >
+          💾 Opslaan
+        </button>
         <input style={S.input({ width: 200 })} placeholder="Zoeken…" />
       </div>
-      <WordTable rows={rows} onChange={setRows} editable />
+      {errorMessage ? (
+        <div style={{ ...S.card({ marginBottom: 12, padding: "10px 14px" }), border: `1px solid ${T.accent}`, color: T.accent }}>
+          {errorMessage}
+        </div>
+      ) : null}
+      <WordTable
+        rows={rows}
+        onChange={setRows}
+        editable={isEditing}
+        onInputTab={(index) => {
+          if (index === lastIndex) {
+            setRows((current) => [...current, ["", ""]]);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -2462,11 +2569,13 @@ function ProgressBar({
 function WordTable({
   rows,
   editable = false,
-  onChange
+  onChange,
+  onInputTab
 }: {
   rows: string[][];
   editable?: boolean;
   onChange?: (rows: string[][]) => void;
+  onInputTab?: (rowIndex: number) => void;
 }) {
   return (
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -2510,6 +2619,11 @@ function WordTable({
                       const next = rows.map((r) => [...r]);
                       next[index][cellIndex] = event.target.value;
                       onChange(next);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Tab" && cellIndex === 1) {
+                        onInputTab?.(index);
+                      }
                     }}
                     style={S.input({ width: "100%", height: 30 })}
                   />

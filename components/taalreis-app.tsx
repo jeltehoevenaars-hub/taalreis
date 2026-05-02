@@ -67,24 +67,9 @@ const calendarSessions: Record<number, string[]> = {
 };
 
 const practiceCards = [
-  {
-    id: "flashcards",
-    title: "Flashcards",
-    copy: "Herhaal woorden in korte rondes met directe feedback.",
-    icon: "🪄"
-  },
-  {
-    id: "match",
-    title: "Koppelen",
-    copy: "Verbind Spaanse woorden met de Nederlandse vertaling.",
-    icon: "🔗"
-  },
-  {
-    id: "quiz",
-    title: "Woordenschattoets",
-    copy: "Typ je antwoorden en rond een compacte toets af.",
-    icon: "✍️"
-  }
+  { id: "woordenschat", title: "Woordenschat", copy: "Oefen en herhaal je woordparen.", icon: "🧠" },
+  { id: "leesvaardigheid", title: "Leesvaardigheid", copy: "Lees korte teksten en beantwoord vragen.", icon: "📖" },
+  { id: "schrijfvaardigheid", title: "Schrijfvaardigheid", copy: "Schrijfopdrachten met directe feedback.", icon: "✍️" }
 ];
 
 function cubicBez(p0: number, p1: number, p2: number, p3: number, t: number) {
@@ -407,9 +392,8 @@ export function TaalreisApp({
         <div
           style={{
             position: "fixed",
-            top: 72,
-            left: "50%",
-            transform: "translateX(-50%)",
+            top: 24,
+            left: 240,
             zIndex: 300,
             ...S.card({
               padding: "10px 14px",
@@ -421,6 +405,7 @@ export function TaalreisApp({
         </div>
       ) : null}
 
+      <div style={{ marginLeft: 220 }}>
       {!activeChapter && screen === "Reiskaart" ? (
         <div className="page-enter">
           <JourneyMap
@@ -461,6 +446,7 @@ export function TaalreisApp({
           <ChapterScreen chapter={activeChapter} onClose={() => setActiveChapter(null)} />
         </div>
       ) : null}
+      </div>
 
       {isDemoMode ? (
         <div
@@ -717,13 +703,14 @@ function TopNav({
     <nav
       style={{
         position: "fixed",
-        inset: "0 0 auto 0",
+        inset: "0 auto 0 0",
         zIndex: 100,
-        height: 56,
+        width: 220,
         background: T.surface,
-        borderBottom: `1px solid ${T.border}`,
+        borderRight: `1px solid ${T.border}`,
         display: "flex",
-        alignItems: "center",
+        flexDirection: "column",
+        alignItems: "stretch",
         boxShadow: T.shadow.sm
       }}
       className="nav-shell"
@@ -733,7 +720,7 @@ function TopNav({
           fontSize: 16,
           fontWeight: T.fw.semi,
           color: T.text,
-          marginRight: 40,
+          margin: "16px",
           letterSpacing: -0.2,
           cursor: "pointer"
         }}
@@ -742,20 +729,20 @@ function TopNav({
         Taalreis
       </div>
 
-      <div style={{ display: "flex", gap: 4, flex: 1 }} className="nav-tabs">
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, padding: "0 12px" }} className="nav-tabs">
         {tabs.map((tab) => (
           <button
             key={tab}
             onClick={() => onNav(tab)}
             style={{
-              background: "transparent",
               fontSize: T.fs.sm,
               fontWeight: T.fw.med,
               color: active === tab ? T.accent : T.textSec,
               cursor: "pointer",
-              padding: "0 14px",
-              height: 56,
-              borderBottom: active === tab ? `2px solid ${T.accent}` : "2px solid transparent",
+              padding: "10px 14px",
+              textAlign: "left",
+              borderRadius: 8,
+              background: active === tab ? T.accentLight : "transparent",
               transition: T.trans
             }}
           >
@@ -764,7 +751,7 @@ function TopNav({
         ))}
       </div>
 
-      <div ref={menuRef} style={{ position: "relative" }}>
+      <div ref={menuRef} style={{ position: "relative", padding: 12 }}>
         <button
           onClick={() => setOpen((current) => !current)}
           style={{
@@ -887,7 +874,7 @@ function JourneyMap({
   }, []);
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 56 }}>
+    <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 24 }}>
       <div className="max-shell">
         <div
           style={{
@@ -1049,20 +1036,6 @@ function PadView({
               <FooterWords chapter={chapter} />
             </button>
 
-            <div
-              style={{
-                position: "absolute",
-                top: nodeY - PAD.dotSize / 2,
-                left: nodeX - PAD.dotSize / 2,
-                width: PAD.dotSize,
-                height: PAD.dotSize,
-                borderRadius: "50%",
-                background: chapter.prog > 0 ? T.accent : T.surface,
-                border: `2px solid ${chapter.prog > 0 ? T.accent : T.neutral}`,
-                boxShadow: chapter.prog > 0 ? `0 0 0 3px ${T.accentLight}` : "none",
-                zIndex: 3
-              }}
-            />
 
             {index < chapters.length - 1 ? (
               <PathInsertButton index={index} onClick={() => onAddAt(index)} />
@@ -1180,6 +1153,8 @@ function TimelineView({
                     placeItems: "center",
                     fontSize: 12,
                     fontWeight: 700,
+                    lineHeight: 1,
+                    padding: 0,
                     transition: T.trans
                   }}
                 >
@@ -1282,6 +1257,7 @@ function ChapterScreen({
   const [uploadState, setUploadState] = useState<"idle" | "drop" | "loading" | "confirm">("idle");
   const [exercise, setExercise] = useState<string | null>(null);
   const [loadingPct, setLoadingPct] = useState(0);
+  const [rows, setRows] = useState<string[][]>(wordRows);
 
   useEffect(() => {
     if (uploadState !== "loading") {
@@ -1418,6 +1394,8 @@ function ChapterScreen({
               uploadState={uploadState}
               setUploadState={setUploadState}
               loadingPct={loadingPct}
+              rows={rows}
+              setRows={setRows}
             />
           ) : exercise ? (
             <QuizPanel onBack={() => setExercise(null)} />
@@ -1460,7 +1438,7 @@ function LibraryScreen({ chapters }: { chapters: JourneyChapter[] }) {
       : reviewSessions.filter((session) => session.type === filter);
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 56 }}>
+    <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 24 }}>
       <div style={{ display: "flex", height: "calc(100vh - 56px)" }}>
         <div
           style={{
@@ -1660,7 +1638,7 @@ function CalendarScreen() {
   const daysInMonth = new Date(month.year, month.month + 1, 0).getDate();
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 56 }}>
+    <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 24 }}>
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "40px 32px" }}>
         <div
           style={{
@@ -1837,7 +1815,7 @@ function SettingsScreen({
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 56 }}>
+    <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 24 }}>
       <div style={{ maxWidth: 600, margin: "0 auto", padding: "40px 32px" }}>
         <h1 style={{ fontSize: T.fs.xl, fontWeight: T.fw.semi, margin: "0 0 28px" }}>Instellingen</h1>
 
@@ -1982,11 +1960,15 @@ function SettingsScreen({
 function VocabularyPanel({
   uploadState,
   setUploadState,
-  loadingPct
+  loadingPct,
+  rows,
+  setRows
 }: {
   uploadState: "idle" | "drop" | "loading" | "confirm";
   setUploadState: (value: "idle" | "drop" | "loading" | "confirm") => void;
   loadingPct: number;
+  rows: string[][];
+  setRows: (rows: string[][] | ((current: string[][]) => string[][])) => void;
 }) {
   if (uploadState === "drop") {
     return (
@@ -2060,6 +2042,8 @@ function VocabularyPanel({
         </div>
         <div style={S.card({ marginBottom: 16 })}>
           <WordTable
+            editable
+            onChange={setRows}
             rows={[
               ["el desayuno", "het ontbijt"],
               ["la servilleta", "het servet"],
@@ -2088,10 +2072,10 @@ function VocabularyPanel({
         <button style={S.btn("primary")} onClick={() => setUploadState("drop")}>
           ↑ Uploaden
         </button>
-        <button style={S.btn("ghost")}>+ Handmatig toevoegen</button>
+        <button style={S.btn("ghost")} onClick={() => setRows((current) => [...current, ["", ""]])}>+ Handmatig toevoegen</button>
         <input style={S.input({ width: 200 })} placeholder="Zoeken…" />
       </div>
-      <WordTable rows={wordRows} />
+      <WordTable rows={rows} onChange={setRows} editable />
     </div>
   );
 }
@@ -2445,7 +2429,15 @@ function ProgressBar({
   );
 }
 
-function WordTable({ rows }: { rows: string[][] }) {
+function WordTable({
+  rows,
+  editable = false,
+  onChange
+}: {
+  rows: string[][];
+  editable?: boolean;
+  onChange?: (rows: string[][]) => void;
+}) {
   return (
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead>
@@ -2478,9 +2470,22 @@ function WordTable({ rows }: { rows: string[][] }) {
               event.currentTarget.style.background = "transparent";
             }}
           >
-            {row.map((cell) => (
-              <td key={cell} style={{ padding: "9px 12px", fontSize: T.fs.sm }}>
-                {cell}
+            {row.map((cell, cellIndex) => (
+              <td key={`${cell}-${cellIndex}`} style={{ padding: "9px 12px", fontSize: T.fs.sm }}>
+                {editable ? (
+                  <input
+                    value={cell}
+                    onChange={(event) => {
+                      if (!onChange) return;
+                      const next = rows.map((r) => [...r]);
+                      next[index][cellIndex] = event.target.value;
+                      onChange(next);
+                    }}
+                    style={S.input({ width: "100%", height: 30 })}
+                  />
+                ) : (
+                  cell
+                )}
               </td>
             ))}
           </tr>

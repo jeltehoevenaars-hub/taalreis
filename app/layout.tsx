@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
+import type { CSSProperties } from "react";
 
 import "./globals.css";
 import { cssVars } from "@/design_handoff_taalreis/taalreis-tokens";
@@ -24,7 +25,7 @@ export default function RootLayout({
     <html lang="nl">
       <body
         className={outfit.className}
-        style={cssVars}
+        style={cssVars as CSSProperties}
       >
         {children}
       </body>

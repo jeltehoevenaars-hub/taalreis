@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import type { JourneyChapter, UserSettings } from "@/lib/types";
+import type { AppUser, JourneyChapter, UserSettings } from "@/lib/types";
 
 type ActionResult<T> = {
   data?: T;
@@ -122,4 +122,48 @@ export async function signOutAction(): Promise<ActionResult<true>> {
 
   revalidatePath("/");
   return { data: true };
+}
+
+export async function saveProfileAction(input: {
+  name: string;
+  avatarUrl: string;
+}): Promise<ActionResult<AppUser>> {
+  const supabase = await createServerSupabaseClient();
+
+  if (!supabase) {
+    return { error: "Supabase is niet geconfigureerd." };
+  }
+
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "Je sessie is verlopen. Log opnieuw in." };
+  }
+
+  const cleanedName = input.name.trim() || "Reiziger";
+  const cleanedAvatar = input.avatarUrl.trim();
+
+  const { error } = await supabase.from("profiles").upsert(
+    {
+      user_id: user.id,
+      full_name: cleanedName,
+      avatar_url: cleanedAvatar || null
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (error) {
+    return { error: "Profiel opslaan is niet gelukt." };
+  }
+
+  revalidatePath("/");
+  return {
+    data: {
+      name: cleanedName,
+      email: user.email ?? "",
+      avatarUrl: cleanedAvatar || null
+    }
+  };
 }

@@ -1,6 +1,7 @@
 create table if not exists public.profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   full_name text,
+  avatar_url text,
   interface_language text not null default 'nl' check (interface_language in ('nl', 'en')),
   level text not null default 'B1',
   notifications_enabled boolean not null default true,

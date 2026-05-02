@@ -4,7 +4,7 @@ import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { addChapterAction, saveSettingsAction, signOutAction } from "@/lib/actions";
+import { addChapterAction, saveProfileAction, saveSettingsAction, signOutAction } from "@/lib/actions";
 import { defaultChapters } from "@/lib/default-data";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { AppUser, BootData, JourneyChapter, Screen, UserSettings } from "@/lib/types";
@@ -374,6 +374,33 @@ export function TaalreisApp({
     }
   }
 
+  async function handleSaveProfile(nextProfile: { name: string; avatarUrl: string }) {
+    if (!user) {
+      return;
+    }
+
+    const nextUser: AppUser = {
+      ...user,
+      name: nextProfile.name.trim() || "Reiziger",
+      avatarUrl: nextProfile.avatarUrl.trim() || null
+    };
+    setUser(nextUser);
+
+    if (!supabase || !initialUser) {
+      return;
+    }
+
+    const result = await saveProfileAction(nextProfile);
+    if (result.error) {
+      setFeedback(result.error);
+      return;
+    }
+
+    if (result.data) {
+      setUser(result.data);
+    }
+  }
+
   if (screen === "Login" || !user) {
     return (
       <div className="page-enter">
@@ -389,7 +416,7 @@ export function TaalreisApp({
 
   return (
     <div className="app-shell">
-      <TopNav active={screen} onNav={navigate} user={user} onLogout={handleLogout} />
+      <TopNav active={screen} onNav={navigate} user={user} />
 
       {feedback ? (
         <div
@@ -447,6 +474,7 @@ export function TaalreisApp({
             user={user}
             settings={settings}
             onSave={handleSaveSettings}
+            onSaveProfile={handleSaveProfile}
             onLogout={handleLogout}
           />
         </div>
@@ -682,28 +710,13 @@ function LoginScreen({
 function TopNav({
   active,
   onNav,
-  user,
-  onLogout
+  user
 }: {
   active: Screen;
   onNav: (screen: Screen) => void;
   user: AppUser;
-  onLogout: () => Promise<void>;
 }) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement | null>(null);
   const tabs: Screen[] = ["Reiskaart", "Bibliotheek", "Kalender"];
-
-  useEffect(() => {
-    function handlePointerDown(event: MouseEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-
-    window.addEventListener("mousedown", handlePointerDown);
-    return () => window.removeEventListener("mousedown", handlePointerDown);
-  }, []);
 
   return (
     <nav
@@ -757,24 +770,29 @@ function TopNav({
         ))}
       </div>
 
-      <div ref={menuRef} style={{ position: "relative", padding: 12 }}>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button
-            onClick={() => onNav("Instellingen")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              border: `1px solid ${T.border}`,
-              borderRadius: T.radius.pill,
-              padding: "4px 12px",
-              background: T.surface,
-              cursor: "pointer",
-              flex: 1
-            }}
-            title="Open account instellingen"
-          >
-            <span style={{ fontSize: T.fs.sm, fontWeight: T.fw.semi }}>{user.name}</span>
+      <div style={{ padding: 12 }}>
+        <button
+          onClick={() => onNav("Instellingen")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            border: `1px solid ${T.border}`,
+            borderRadius: T.radius.pill,
+            padding: "4px 12px",
+            background: T.surface,
+            cursor: "pointer"
+          }}
+          title="Open account instellingen"
+        >
+          <span style={{ fontSize: T.fs.sm, fontWeight: T.fw.semi }}>{user.name}</span>
+          {user.avatarUrl ? (
+            <img
+              src={user.avatarUrl}
+              alt={`Profielfoto van ${user.name}`}
+              style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }}
+            />
+          ) : (
             <div
               style={{
                 width: 28,
@@ -790,85 +808,8 @@ function TopNav({
             >
               {user.name[0]}
             </div>
-          </button>
-
-          <button
-            onClick={() => setOpen((current) => !current)}
-            aria-label="Open profielmenu"
-            style={{
-              border: `1px solid ${T.border}`,
-              borderRadius: T.radius.pill,
-              padding: "0 10px",
-              background: T.surface,
-              cursor: "pointer",
-              color: T.textSec
-            }}
-          >
-            ▾
-          </button>
-        </div>
-
-        {open ? (
-          <div
-            style={{
-              position: "absolute",
-              top: "calc(100% + 8px)",
-              right: 0,
-              background: T.surface,
-              border: `1px solid ${T.border}`,
-              borderRadius: T.radius.md,
-              boxShadow: T.shadow.md,
-              minWidth: 200,
-              overflow: "hidden",
-              zIndex: 200
-            }}
-          >
-            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ fontSize: T.fs.sm, fontWeight: T.fw.semi }}>{user.name}</div>
-              <div style={{ fontSize: T.fs.xs, color: T.textSec, marginTop: 2 }}>{user.email}</div>
-            </div>
-            <button
-              className="profile-menu-item"
-              onClick={() => {
-                setOpen(false);
-                onNav("Instellingen");
-              }}
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "10px 16px",
-                textAlign: "left",
-                background: "transparent",
-                fontSize: T.fs.sm,
-                color: T.text,
-                cursor: "pointer",
-                transition: T.trans
-              }}
-            >
-              Instellingen
-            </button>
-            <button
-              className="profile-menu-item"
-              onClick={() => {
-                setOpen(false);
-                void onLogout();
-              }}
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "10px 16px",
-                textAlign: "left",
-                background: "transparent",
-                fontSize: T.fs.sm,
-                color: T.textSec,
-                cursor: "pointer",
-                transition: T.trans
-              }}
-            >
-              Uitloggen
-            </button>
-          </div>
-        ) : null}
+          )}
+        </button>
       </div>
     </nav>
   );
@@ -1854,16 +1795,20 @@ function SettingsScreen({
   user,
   settings,
   onSave,
+  onSaveProfile,
   onLogout
 }: {
   user: AppUser;
   settings: UserSettings;
   onSave: (settings: UserSettings) => Promise<void>;
+  onSaveProfile: (profile: { name: string; avatarUrl: string }) => Promise<void>;
   onLogout: () => Promise<void>;
 }) {
   const [level, setLevel] = useState(settings.level);
   const [language, setLanguage] = useState<UserSettings["interfaceLanguage"]>(settings.interfaceLanguage);
   const [notifications, setNotifications] = useState(settings.notificationsEnabled);
+  const [name, setName] = useState(user.name);
+  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
 
   function persist(next: UserSettings) {
     void onSave(next);
@@ -1876,29 +1821,59 @@ function SettingsScreen({
 
         <SectionCard title="Account">
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                background: T.accentMid,
-                display: "grid",
-                placeItems: "center",
-                fontSize: 18,
-                fontWeight: T.fw.semi,
-                color: T.accent,
-                flexShrink: 0
-              }}
-            >
-              {user.name[0]}
-            </div>
+            {avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={`Profielfoto van ${name || user.name}`}
+                style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: "50%",
+                  background: T.accentMid,
+                  display: "grid",
+                  placeItems: "center",
+                  fontSize: 18,
+                  fontWeight: T.fw.semi,
+                  color: T.accent,
+                  flexShrink: 0
+                }}
+              >
+                {(name || user.name)[0]}
+              </div>
+            )}
             <div>
-              <div style={{ fontSize: T.fs.base, fontWeight: T.fw.med }}>{user.name}</div>
+              <div style={{ fontSize: T.fs.base, fontWeight: T.fw.med }}>{name || user.name}</div>
               <div style={{ fontSize: T.fs.xs, color: T.textSec }}>{user.email}</div>
             </div>
           </div>
+          <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+            <label style={{ fontSize: T.fs.xs, color: T.textSec }}>Naam</label>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Je naam"
+              style={{ ...S.input, width: "100%" }}
+            />
+            <label style={{ fontSize: T.fs.xs, color: T.textSec }}>Profielfoto URL</label>
+            <input
+              value={avatarUrl}
+              onChange={(event) => setAvatarUrl(event.target.value)}
+              placeholder="https://..."
+              style={{ ...S.input, width: "100%" }}
+            />
+            <button
+              style={S.btn("default", { width: "fit-content", height: 34, fontSize: T.fs.xs })}
+              onClick={() => void onSaveProfile({ name, avatarUrl })}
+            >
+              Profiel opslaan
+            </button>
+          </div>
           <div style={{ display: "flex", gap: 10, paddingTop: 4, flexWrap: "wrap" }}>
-            <button style={S.btn("default", { height: 34, fontSize: T.fs.xs })}>
+            <button style={S.btn("default", { height: 34, fontSize: T.fs.xs })} disabled>
               Wachtwoord wijzigen
             </button>
             <button

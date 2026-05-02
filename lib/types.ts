@@ -1,0 +1,30 @@
+export type Screen = "Login" | "Reiskaart" | "Bibliotheek" | "Kalender" | "Instellingen";
+
+export type JourneyChapter = {
+  id: string;
+  n: string;
+  title: string;
+  prog: number;
+  total: number;
+  done?: boolean;
+  active?: boolean;
+  sortOrder: number;
+};
+
+export type AppUser = {
+  name: string;
+  email: string;
+};
+
+export type UserSettings = {
+  level: string;
+  interfaceLanguage: "nl" | "en";
+  notificationsEnabled: boolean;
+};
+
+export type BootData = {
+  initialUser: AppUser | null;
+  initialChapters: JourneyChapter[];
+  initialSettings: UserSettings;
+  supabaseEnabled: boolean;
+};

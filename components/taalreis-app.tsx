@@ -1417,6 +1417,8 @@ function LibraryScreen({
   const [exercise, setExercise] = useState<string | null>(null);
   const [filter, setFilter] = useState("Alles");
   const [search, setSearch] = useState("");
+  const [libraryRows, setLibraryRows] = useState<string[][]>([]);
+  const [libraryEditing, setLibraryEditing] = useState(false);
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -1441,15 +1443,18 @@ function LibraryScreen({
   }, [initialTab]);
 
   const filteredWords = useMemo(() => {
-    if (!deferredSearch.trim()) {
-      return wordRows;
+    if (libraryEditing) {
+      return libraryRows;
     }
-    return wordRows.filter(
+    if (!deferredSearch.trim()) {
+      return libraryRows;
+    }
+    return libraryRows.filter(
       ([spanish, dutch]) =>
         spanish.toLowerCase().includes(deferredSearch.toLowerCase()) ||
         dutch.toLowerCase().includes(deferredSearch.toLowerCase())
     );
-  }, [deferredSearch]);
+  }, [deferredSearch, libraryRows, libraryEditing]);
 
   const filteredSessions =
     filter === "Alles"
@@ -1552,6 +1557,27 @@ function LibraryScreen({
                   {chapters[selectedChapter].n} · {chapters[selectedChapter].title}
                 </div>
                 <span style={S.tag("neutral", { fontSize: T.fs.xs })}>20 woorden</span>
+                <button
+                  style={S.btn("ghost", { height: 34, padding: "0 10px", fontSize: T.fs.xs })}
+                  onClick={() => {
+                    setLibraryEditing(true);
+                    setSearch("");
+                    if (libraryRows.length === 0) {
+                      setLibraryRows([["", ""]]);
+                    }
+                  }}
+                >
+                  ✏️ Bewerk
+                </button>
+                <button
+                  style={S.btn("ghost", { height: 34, padding: "0 10px", fontSize: T.fs.xs })}
+                  onClick={() => {
+                    setLibraryRows((current) => sanitizeRows(current));
+                    setLibraryEditing(false);
+                  }}
+                >
+                  💾 Opslaan
+                </button>
                 <input
                   style={S.input({ height: 34, width: 180 })}
                   placeholder="Zoeken…"
@@ -1559,7 +1585,16 @@ function LibraryScreen({
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </div>
-              <WordTable rows={filteredWords} />
+              <WordTable
+                rows={filteredWords}
+                editable={libraryEditing}
+                onChange={setLibraryRows}
+                onInputTab={(index) => {
+                  if (index === libraryRows.length - 1) {
+                    setLibraryRows((current) => [...current, ["", ""]]);
+                  }
+                }}
+              />
             </div>
           ) : tab === "oefenen" ? (
             exercise ? <QuizPanel onBack={() => setExercise(null)} /> : <ExerciseChooser onSelect={setExercise} />

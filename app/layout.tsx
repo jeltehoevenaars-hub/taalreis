@@ -1,15 +1,13 @@
 import type { Metadata } from "next";
-import { Outfit } from "next/font/google";
 import type { CSSProperties } from "react";
 
 import "./globals.css";
 import { cssVars } from "@/design_handoff_taalreis/taalreis-tokens";
 
-const outfit = Outfit({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  display: "swap"
-});
+const appStyles: CSSProperties = {
+  ...(cssVars as CSSProperties),
+  fontFamily: "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+};
 
 export const metadata: Metadata = {
   title: "Taalreis",
@@ -23,12 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="nl">
-      <body
-        className={outfit.className}
-        style={cssVars as CSSProperties}
-      >
-        {children}
-      </body>
+      <body style={appStyles}>{children}</body>
     </html>
   );
 }

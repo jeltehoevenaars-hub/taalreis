@@ -35,6 +35,7 @@ const wordRows = [
 ];
 
 const VOCAB_SYNC_KEY = "taalreis_vocab_latest";
+const LIBRARY_VOCAB_BY_CHAPTER_KEY = "taalreis_library_vocab_by_chapter";
 
 function normalizePair(spanish: string, dutch: string) {
   return `${spanish.trim().toLowerCase()}::${dutch.trim().toLowerCase()}`;
@@ -1417,9 +1418,38 @@ function LibraryScreen({
   const [exercise, setExercise] = useState<string | null>(null);
   const [filter, setFilter] = useState("Alles");
   const [search, setSearch] = useState("");
-  const [libraryRows, setLibraryRows] = useState<string[][]>([]);
+  const [libraryRowsByChapter, setLibraryRowsByChapter] = useState<Record<string, string[][]>>({});
   const [libraryEditing, setLibraryEditing] = useState(false);
   const deferredSearch = useDeferredValue(search);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(LIBRARY_VOCAB_BY_CHAPTER_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved) as Record<string, string[][]>;
+      setLibraryRowsByChapter(parsed);
+    } catch {
+      setLibraryRowsByChapter({});
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(LIBRARY_VOCAB_BY_CHAPTER_KEY, JSON.stringify(libraryRowsByChapter));
+  }, [libraryRowsByChapter]);
+
+  const selectedChapterKey = selectedChapter !== null ? chapters[selectedChapter]?.id ?? null : null;
+  const libraryRows = selectedChapterKey ? libraryRowsByChapter[selectedChapterKey] ?? [] : [];
+  const setLibraryRows = (next: string[][] | ((current: string[][]) => string[][])) => {
+    if (!selectedChapterKey) return;
+    setLibraryRowsByChapter((current) => {
+      const chapterRows = current[selectedChapterKey] ?? [];
+      const resolved = typeof next === "function" ? next(chapterRows) : next;
+      return {
+        ...current,
+        [selectedChapterKey]: resolved
+      };
+    });
+  };
 
   useEffect(() => {
     if (selectedChapter !== null && !chapters[selectedChapter]) {
@@ -1556,7 +1586,7 @@ function LibraryScreen({
                 <div style={{ fontSize: T.fs.base, fontWeight: T.fw.med, color: T.text, flex: 1 }}>
                   {chapters[selectedChapter].n} · {chapters[selectedChapter].title}
                 </div>
-                <span style={S.tag("neutral", { fontSize: T.fs.xs })}>20 woorden</span>
+                <span style={S.tag("neutral", { fontSize: T.fs.xs })}>{sanitizeRows(libraryRows).length} woorden</span>
                 <button
                   style={S.btn("ghost", { height: 34, padding: "0 10px", fontSize: T.fs.xs })}
                   onClick={() => {
@@ -1567,7 +1597,7 @@ function LibraryScreen({
                     }
                   }}
                 >
-                  ✏️ Bewerk
+                  <span aria-label="Bewerk" title="Bewerk">🖉</span>
                 </button>
                 <button
                   style={S.btn("ghost", { height: 34, padding: "0 10px", fontSize: T.fs.xs })}
@@ -1576,7 +1606,7 @@ function LibraryScreen({
                     setLibraryEditing(false);
                   }}
                 >
-                  💾 Opslaan
+                  <span aria-label="Opslaan" title="Opslaan">✓</span>
                 </button>
                 <input
                   style={S.input({ height: 34, width: 180 })}
@@ -2635,7 +2665,7 @@ function WordTable({
       <tbody>
         {rows.map((row, index) => (
           <tr
-            key={`${row[0]}-${index}`}
+            key={index}
             style={{ borderBottom: `1px solid ${T.neutralLight}` }}
             onMouseEnter={(event) => {
               event.currentTarget.style.background = T.neutralLight;
@@ -2645,7 +2675,7 @@ function WordTable({
             }}
           >
             {row.map((cell, cellIndex) => (
-              <td key={`${cell}-${cellIndex}`} style={{ padding: "9px 12px", fontSize: T.fs.sm }}>
+              <td key={cellIndex} style={{ padding: "9px 12px", fontSize: T.fs.sm }}>
                 {editable ? (
                   <input
                     value={cell}

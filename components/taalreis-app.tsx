@@ -134,7 +134,10 @@ export function TaalreisApp({
   const [user, setUser] = useState<AppUser | null>(initialUser);
   const [chapters, setChapters] = useState<JourneyChapter[]>(initialChapters);
   const [settings, setSettings] = useState<UserSettings>(initialSettings);
-  const [activeChapter, setActiveChapter] = useState<JourneyChapter | null>(null);
+  const [librarySelectedChapterId, setLibrarySelectedChapterId] = useState<string | null>(null);
+  const [libraryInitialTab, setLibraryInitialTab] = useState<"vocabulair" | "oefenen" | "geschiedenis">(
+    "vocabulair"
+  );
   const [variant, setVariant] = useState<"pad" | "tijdlijn">("pad");
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -292,7 +295,6 @@ export function TaalreisApp({
   }
 
   function navigate(nextScreen: Screen) {
-    setActiveChapter(null);
     if (nextScreen === "Login") {
       void handleLogout();
       return;
@@ -315,7 +317,8 @@ export function TaalreisApp({
     }
 
     setUser(null);
-    setActiveChapter(null);
+    setLibrarySelectedChapterId(null);
+    setLibraryInitialTab("vocabulair");
     setScreen("Login");
     setChapters(defaultChapters);
     router.refresh();
@@ -406,11 +409,15 @@ export function TaalreisApp({
       ) : null}
 
       <div style={{ marginLeft: 220 }}>
-      {!activeChapter && screen === "Reiskaart" ? (
+      {screen === "Reiskaart" ? (
         <div className="page-enter">
           <JourneyMap
             chapters={chapters}
-            onOpenChapter={setActiveChapter}
+            onOpenChapter={(chapter) => {
+              setLibrarySelectedChapterId(chapter.id);
+              setLibraryInitialTab("vocabulair");
+              setScreen("Bibliotheek");
+            }}
             onAddChapter={handleAddChapter}
             variant={variant}
             onVariantChange={setVariant}
@@ -418,19 +425,23 @@ export function TaalreisApp({
         </div>
       ) : null}
 
-      {!activeChapter && screen === "Bibliotheek" ? (
+      {screen === "Bibliotheek" ? (
         <div className="page-enter">
-          <LibraryScreen chapters={chapters} />
+          <LibraryScreen
+            chapters={chapters}
+            selectedChapterId={librarySelectedChapterId}
+            initialTab={libraryInitialTab}
+          />
         </div>
       ) : null}
 
-      {!activeChapter && screen === "Kalender" ? (
+      {screen === "Kalender" ? (
         <div className="page-enter">
           <CalendarScreen />
         </div>
       ) : null}
 
-      {!activeChapter && screen === "Instellingen" ? (
+      {screen === "Instellingen" ? (
         <div className="page-enter">
           <SettingsScreen
             user={user}
@@ -441,11 +452,6 @@ export function TaalreisApp({
         </div>
       ) : null}
 
-      {activeChapter ? (
-        <div className="panel-enter">
-          <ChapterScreen chapter={activeChapter} onClose={() => setActiveChapter(null)} />
-        </div>
-      ) : null}
       </div>
 
       {isDemoMode ? (
@@ -1408,9 +1414,18 @@ function ChapterScreen({
   );
 }
 
-function LibraryScreen({ chapters }: { chapters: JourneyChapter[] }) {
-  const [tab, setTab] = useState<"woordenschat" | "geschiedenis">("woordenschat");
+function LibraryScreen({
+  chapters,
+  selectedChapterId,
+  initialTab
+}: {
+  chapters: JourneyChapter[];
+  selectedChapterId: string | null;
+  initialTab: "vocabulair" | "oefenen" | "geschiedenis";
+}) {
+  const [tab, setTab] = useState<"vocabulair" | "oefenen" | "geschiedenis">(initialTab);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
+  const [exercise, setExercise] = useState<string | null>(null);
   const [filter, setFilter] = useState("Alles");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
@@ -1420,6 +1435,21 @@ function LibraryScreen({ chapters }: { chapters: JourneyChapter[] }) {
       setSelectedChapter(null);
     }
   }, [selectedChapter, chapters]);
+
+  useEffect(() => {
+    if (!selectedChapterId) {
+      return;
+    }
+    const index = chapters.findIndex((chapter) => chapter.id === selectedChapterId);
+    if (index >= 0) {
+      setSelectedChapter(index);
+    }
+  }, [chapters, selectedChapterId]);
+
+  useEffect(() => {
+    setTab(initialTab);
+    setExercise(null);
+  }, [initialTab]);
 
   const filteredWords = useMemo(() => {
     if (!deferredSearch.trim()) {
@@ -1452,12 +1482,16 @@ function LibraryScreen({ chapters }: { chapters: JourneyChapter[] }) {
         >
           <div style={{ display: "flex", borderBottom: `1px solid ${T.border}`, marginBottom: 16 }}>
             {[
-              ["woordenschat", "Woordenschat"],
+              ["vocabulair", "Vocabulair"],
+              ["oefenen", "Oefenen"],
               ["geschiedenis", "Geschiedenis"]
             ].map(([key, label]) => (
               <button
                 key={key}
-                onClick={() => setTab(key as "woordenschat" | "geschiedenis")}
+                onClick={() => {
+                  setTab(key as "vocabulair" | "oefenen" | "geschiedenis");
+                  setExercise(null);
+                }}
                 style={{
                   flex: 1,
                   height: 40,
@@ -1522,7 +1556,7 @@ function LibraryScreen({ chapters }: { chapters: JourneyChapter[] }) {
             <div style={{ textAlign: "center", paddingTop: 60, color: T.textSec, fontSize: T.fs.sm }}>
               ← Kies een hoofdstuk om te beginnen
             </div>
-          ) : tab === "woordenschat" ? (
+          ) : tab === "vocabulair" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                 <div style={{ fontSize: T.fs.base, fontWeight: T.fw.med, color: T.text, flex: 1 }}>
@@ -1538,6 +1572,8 @@ function LibraryScreen({ chapters }: { chapters: JourneyChapter[] }) {
               </div>
               <WordTable rows={filteredWords} />
             </div>
+          ) : tab === "oefenen" ? (
+            exercise ? <QuizPanel onBack={() => setExercise(null)} /> : <ExerciseChooser onSelect={setExercise} />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

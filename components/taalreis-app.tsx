@@ -758,36 +758,55 @@ function TopNav({
       </div>
 
       <div ref={menuRef} style={{ position: "relative", padding: 12 }}>
-        <button
-          onClick={() => setOpen((current) => !current)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            border: `1px solid ${T.border}`,
-            borderRadius: T.radius.pill,
-            padding: "4px 8px 4px 12px",
-            background: T.surface,
-            cursor: "pointer"
-          }}
-        >
-          <span style={{ fontSize: T.fs.sm, fontWeight: T.fw.semi }}>{user.name}</span>
-          <div
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={() => onNav("Instellingen")}
             style={{
-              width: 28,
-              height: 28,
-              borderRadius: "50%",
-              background: T.accentMid,
-              display: "grid",
-              placeItems: "center",
-              color: T.accent,
-              fontWeight: T.fw.semi,
-              fontSize: 13
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              border: `1px solid ${T.border}`,
+              borderRadius: T.radius.pill,
+              padding: "4px 12px",
+              background: T.surface,
+              cursor: "pointer",
+              flex: 1
+            }}
+            title="Open account instellingen"
+          >
+            <span style={{ fontSize: T.fs.sm, fontWeight: T.fw.semi }}>{user.name}</span>
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                background: T.accentMid,
+                display: "grid",
+                placeItems: "center",
+                color: T.accent,
+                fontWeight: T.fw.semi,
+                fontSize: 13
+              }}
+            >
+              {user.name[0]}
+            </div>
+          </button>
+
+          <button
+            onClick={() => setOpen((current) => !current)}
+            aria-label="Open profielmenu"
+            style={{
+              border: `1px solid ${T.border}`,
+              borderRadius: T.radius.pill,
+              padding: "0 10px",
+              background: T.surface,
+              cursor: "pointer",
+              color: T.textSec
             }}
           >
-            {user.name[0]}
-          </div>
-        </button>
+            ▾
+          </button>
+        </div>
 
         {open ? (
           <div

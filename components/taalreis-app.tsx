@@ -33,6 +33,8 @@ const wordRows = [
   ["la cuenta", "de rekening"],
   ["rico", "lekker"]
 ];
+type UploadState = "idle" | "drop" | "loading" | "confirm";
+type ChapterVocabularyState = { rows: string[][]; uploadState: UploadState; loadingPct: number };
 
 const reviewSessions = [
   { datum: "2 mei 2026, 14:30", type: "Leesvaardigheid", score: "3/3", kleur: T.accent },
@@ -137,6 +139,23 @@ export function TaalreisApp({
   const [activeChapter, setActiveChapter] = useState<JourneyChapter | null>(null);
   const [variant, setVariant] = useState<"pad" | "tijdlijn">("pad");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [chapterVocabulary, setChapterVocabulary] = useState<Record<string, ChapterVocabularyState>>({});
+
+  const getChapterVocabulary = (chapterId: string) =>
+    chapterVocabulary[chapterId] ?? { rows: wordRows, uploadState: "idle", loadingPct: 0 };
+
+  const setChapterVocabularyState = (
+    chapterId: string,
+    patch:
+      | Partial<ChapterVocabularyState>
+      | ((current: ChapterVocabularyState) => Partial<ChapterVocabularyState>)
+  ) => {
+    setChapterVocabulary((current) => {
+      const currentState = current[chapterId] ?? { rows: wordRows, uploadState: "idle", loadingPct: 0 };
+      const nextPatch = typeof patch === "function" ? patch(currentState) : patch;
+      return { ...current, [chapterId]: { ...currentState, ...nextPatch } };
+    });
+  };
 
   useEffect(() => {
     const saved = getStoredState();
@@ -420,7 +439,11 @@ export function TaalreisApp({
 
       {!activeChapter && screen === "Bibliotheek" ? (
         <div className="page-enter">
-          <LibraryScreen chapters={chapters} />
+          <LibraryScreen
+            chapters={chapters}
+            getChapterState={getChapterVocabulary}
+            setChapterState={setChapterVocabularyState}
+          />
         </div>
       ) : null}
 
@@ -443,7 +466,12 @@ export function TaalreisApp({
 
       {activeChapter ? (
         <div className="panel-enter">
-          <ChapterScreen chapter={activeChapter} onClose={() => setActiveChapter(null)} />
+          <ChapterScreen
+            chapter={activeChapter}
+            state={getChapterVocabulary(activeChapter.id)}
+            setState={(patch) => setChapterVocabularyState(activeChapter.id, patch)}
+            onClose={() => setActiveChapter(null)}
+          />
         </div>
       ) : null}
       </div>
@@ -1248,16 +1276,20 @@ function TimelineView({
 
 function ChapterScreen({
   chapter,
+  state,
+  setState,
   onClose
 }: {
   chapter: JourneyChapter;
+  state: ChapterVocabularyState;
+  setState: (
+    patch: Partial<ChapterVocabularyState> | ((current: ChapterVocabularyState) => Partial<ChapterVocabularyState>)
+  ) => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"woordenschat" | "oefenen">("woordenschat");
-  const [uploadState, setUploadState] = useState<"idle" | "drop" | "loading" | "confirm">("idle");
   const [exercise, setExercise] = useState<string | null>(null);
-  const [loadingPct, setLoadingPct] = useState(0);
-  const [rows, setRows] = useState<string[][]>(wordRows);
+  const { uploadState, loadingPct, rows } = state;
 
   useEffect(() => {
     if (uploadState !== "loading") {
@@ -1270,9 +1302,9 @@ function ChapterScreen({
       if (pct >= 100) {
         pct = 100;
         window.clearInterval(interval);
-        window.setTimeout(() => setUploadState("confirm"), 300);
+        window.setTimeout(() => setState({ uploadState: "confirm" }), 300);
       }
-      setLoadingPct(Math.min(pct, 100));
+      setState({ loadingPct: Math.min(pct, 100) });
     }, 180);
 
     return () => window.clearInterval(interval);
@@ -1326,8 +1358,8 @@ function ChapterScreen({
               onClick={() => {
                 setTab(key as "woordenschat" | "oefenen");
                 setExercise(null);
-                setUploadState("idle");
-              }}
+              setState({ uploadState: "idle" });
+            }}
               style={{
                 background: active ? T.accentLight : "transparent",
                 borderLeft: `3px solid ${active ? T.accent : "transparent"}`,
@@ -1367,7 +1399,7 @@ function ChapterScreen({
                 onClick={() => {
                   setTab(key as "woordenschat" | "oefenen");
                   setExercise(null);
-                  setUploadState("idle");
+                  setState({ uploadState: "idle" });
                 }}
                 style={{
                   height: 48,
@@ -1392,10 +1424,14 @@ function ChapterScreen({
           {tab === "woordenschat" ? (
             <VocabularyPanel
               uploadState={uploadState}
-              setUploadState={setUploadState}
+              setUploadState={(value) => setState({ uploadState: value })}
               loadingPct={loadingPct}
               rows={rows}
-              setRows={setRows}
+              setRows={(nextRows) =>
+                setState((current) => ({
+                  rows: typeof nextRows === "function" ? nextRows(current.rows) : nextRows
+                }))
+              }
             />
           ) : exercise ? (
             <QuizPanel onBack={() => setExercise(null)} />
@@ -1408,7 +1444,18 @@ function ChapterScreen({
   );
 }
 
-function LibraryScreen({ chapters }: { chapters: JourneyChapter[] }) {
+function LibraryScreen({
+  chapters,
+  getChapterState,
+  setChapterState
+}: {
+  chapters: JourneyChapter[];
+  getChapterState: (chapterId: string) => ChapterVocabularyState;
+  setChapterState: (
+    chapterId: string,
+    patch: Partial<ChapterVocabularyState> | ((current: ChapterVocabularyState) => Partial<ChapterVocabularyState>)
+  ) => void;
+}) {
   const [tab, setTab] = useState<"woordenschat" | "geschiedenis">("woordenschat");
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
   const [filter, setFilter] = useState("Alles");
@@ -1421,16 +1468,20 @@ function LibraryScreen({ chapters }: { chapters: JourneyChapter[] }) {
     }
   }, [selectedChapter, chapters]);
 
+  const selectedChapterData = selectedChapter === null ? null : chapters[selectedChapter];
+  const selectedChapterState = selectedChapterData ? getChapterState(selectedChapterData.id) : null;
   const filteredWords = useMemo(() => {
+    if (!selectedChapterState) return [] as Array<{ row: string[]; index: number }>;
     if (!deferredSearch.trim()) {
-      return wordRows;
+      return selectedChapterState.rows.map((row, index) => ({ row, index }));
     }
-    return wordRows.filter(
-      ([spanish, dutch]) =>
+    return selectedChapterState.rows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row: [spanish, dutch] }) =>
         spanish.toLowerCase().includes(deferredSearch.toLowerCase()) ||
         dutch.toLowerCase().includes(deferredSearch.toLowerCase())
-    );
-  }, [deferredSearch]);
+      );
+  }, [deferredSearch, selectedChapterState]);
 
   const filteredSessions =
     filter === "Alles"
@@ -1528,15 +1579,28 @@ function LibraryScreen({ chapters }: { chapters: JourneyChapter[] }) {
                 <div style={{ fontSize: T.fs.base, fontWeight: T.fw.med, color: T.text, flex: 1 }}>
                   {chapters[selectedChapter].n} · {chapters[selectedChapter].title}
                 </div>
-                <span style={S.tag("neutral", { fontSize: T.fs.xs })}>20 woorden</span>
-                <input
-                  style={S.input({ height: 34, width: 180 })}
-                  placeholder="Zoeken…"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
+                <span style={S.tag("neutral", { fontSize: T.fs.xs })}>
+                  {selectedChapterState?.rows.length ?? 0} woorden
+                </span>
               </div>
-              <WordTable rows={filteredWords} />
+              {selectedChapterState ? (
+                <VocabularyPanel
+                  uploadState={selectedChapterState.uploadState}
+                  setUploadState={(value) =>
+                    setChapterState(selectedChapterData!.id, { uploadState: value })
+                  }
+                  loadingPct={selectedChapterState.loadingPct}
+                  rows={selectedChapterState.rows}
+                  rowIndexes={filteredWords.map((item) => item.index)}
+                  setRows={(nextRows) =>
+                    setChapterState(selectedChapterData!.id, (current) => ({
+                      rows: typeof nextRows === "function" ? nextRows(current.rows) : nextRows
+                    }))
+                  }
+                  search={search}
+                  setSearch={setSearch}
+                />
+              ) : null}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1962,13 +2026,18 @@ function VocabularyPanel({
   setUploadState,
   loadingPct,
   rows,
-  setRows
+  setRows,
+  search = "",
+  setSearch
 }: {
-  uploadState: "idle" | "drop" | "loading" | "confirm";
-  setUploadState: (value: "idle" | "drop" | "loading" | "confirm") => void;
+  uploadState: UploadState;
+  setUploadState: (value: UploadState) => void;
   loadingPct: number;
   rows: string[][];
+  rowIndexes?: number[];
   setRows: (rows: string[][] | ((current: string[][]) => string[][])) => void;
+  search?: string;
+  setSearch?: (value: string) => void;
 }) {
   if (uploadState === "drop") {
     return (
@@ -2072,8 +2141,17 @@ function VocabularyPanel({
         <button style={S.btn("primary")} onClick={() => setUploadState("drop")}>
           ↑ Uploaden
         </button>
-        <button style={S.btn("ghost")} onClick={() => setRows((current) => [...current, ["", ""]])}>+ Handmatig toevoegen</button>
-        <input style={S.input({ width: 200 })} placeholder="Zoeken…" />
+        <button style={S.btn("ghost")} onClick={() => setRows((current) => [...current, ["", ""]])}>
+          + Handmatig toevoegen
+        </button>
+        {setSearch ? (
+          <input
+            style={S.input({ width: 200 })}
+            placeholder="Zoeken…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        ) : null}
       </div>
       <WordTable rows={rows} onChange={setRows} editable />
     </div>
@@ -2431,13 +2509,16 @@ function ProgressBar({
 
 function WordTable({
   rows,
+  rowIndexes,
   editable = false,
   onChange
 }: {
   rows: string[][];
+  rowIndexes?: number[];
   editable?: boolean;
   onChange?: (rows: string[][]) => void;
 }) {
+  const displayRows = rowIndexes ? rowIndexes.map((index) => ({ row: rows[index], index })) : rows.map((row, index) => ({ row, index }));
   return (
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead>
@@ -2456,10 +2537,11 @@ function WordTable({
               {column}
             </th>
           ))}
+          {editable ? <th style={{ width: 44 }} /> : null}
         </tr>
       </thead>
       <tbody>
-        {rows.map((row, index) => (
+        {displayRows.map(({ row, index }) => (
           <tr
             key={`${row[0]}-${index}`}
             style={{ borderBottom: `1px solid ${T.neutralLight}` }}
@@ -2488,6 +2570,16 @@ function WordTable({
                 )}
               </td>
             ))}
+            {editable ? (
+              <td style={{ padding: "9px 12px", width: 44 }}>
+                <button
+                  onClick={() => onChange?.(rows.filter((_, rowIndex) => rowIndex !== index))}
+                  style={S.btn("default", { height: 28, padding: "0 8px", fontSize: T.fs.xs })}
+                >
+                  ✕
+                </button>
+              </td>
+            ) : null}
           </tr>
         ))}
       </tbody>

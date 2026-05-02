@@ -15,6 +15,7 @@ type ChapterRow = {
 
 type ProfileRow = {
   full_name: string | null;
+  avatar_url: string | null;
   interface_language: "nl" | "en" | null;
   level: string | null;
   notifications_enabled: boolean | null;
@@ -108,7 +109,7 @@ export async function getBootData(): Promise<BootData> {
         .order("sort_order"),
       supabase
         .from("profiles")
-        .select("full_name, interface_language, level, notifications_enabled")
+        .select("full_name, avatar_url, interface_language, level, notifications_enabled")
         .eq("user_id", user.id)
         .maybeSingle()
     ]);
@@ -128,7 +129,8 @@ export async function getBootData(): Promise<BootData> {
         user.user_metadata.full_name ??
         user.email?.split("@")[0] ??
         "Reiziger",
-      email: user.email ?? ""
+      email: user.email ?? "",
+      avatarUrl: profileData?.avatar_url ?? null
     },
     initialChapters: chapters,
     initialSettings: mapSettings(profileData),

@@ -9,6 +9,11 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createServerSupabaseClient();
+
+    if (!supabase) {
+      throw new Error("Supabase client not initialized");
+    }
+
     await supabase.auth.exchangeCodeForSession(code);
   }
 

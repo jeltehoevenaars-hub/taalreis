@@ -34,6 +34,36 @@ const wordRows = [
   ["rico", "lekker"]
 ];
 
+const VOCAB_SYNC_KEY = "taalreis_vocab_latest";
+const LIBRARY_VOCAB_BY_CHAPTER_KEY = "taalreis_library_vocab_by_chapter";
+
+function normalizePair(spanish: string, dutch: string) {
+  return `${spanish.trim().toLowerCase()}::${dutch.trim().toLowerCase()}`;
+}
+
+function sanitizeRows(rows: string[][]) {
+  const seen = new Set<string>();
+  const unique: string[][] = [];
+
+  rows.forEach((row) => {
+    const spanish = (row[0] ?? "").trim();
+    const dutch = (row[1] ?? "").trim();
+
+    if (!spanish || !dutch) {
+      return;
+    }
+
+    const key = normalizePair(spanish, dutch);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    unique.push([spanish, dutch]);
+  });
+
+  return unique;
+}
+
 const reviewSessions = [
   { datum: "2 mei 2026, 14:30", type: "Leesvaardigheid", score: "3/3", kleur: T.accent },
   { datum: "1 mei 2026, 09:15", type: "Schrijfvaardigheid", score: "Voltooid", kleur: "#6B8FBF" },
@@ -1223,7 +1253,7 @@ function ChapterScreen({
   const [uploadState, setUploadState] = useState<"idle" | "drop" | "loading" | "confirm">("idle");
   const [exercise, setExercise] = useState<string | null>(null);
   const [loadingPct, setLoadingPct] = useState(0);
-  const [rows, setRows] = useState<string[][]>(wordRows);
+  const [rows, setRows] = useState<string[][]>([]);
 
   useEffect(() => {
     if (uploadState !== "loading") {
@@ -1388,7 +1418,38 @@ function LibraryScreen({
   const [exercise, setExercise] = useState<string | null>(null);
   const [filter, setFilter] = useState("Alles");
   const [search, setSearch] = useState("");
+  const [libraryRowsByChapter, setLibraryRowsByChapter] = useState<Record<string, string[][]>>({});
+  const [libraryEditing, setLibraryEditing] = useState(false);
   const deferredSearch = useDeferredValue(search);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(LIBRARY_VOCAB_BY_CHAPTER_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved) as Record<string, string[][]>;
+      setLibraryRowsByChapter(parsed);
+    } catch {
+      setLibraryRowsByChapter({});
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(LIBRARY_VOCAB_BY_CHAPTER_KEY, JSON.stringify(libraryRowsByChapter));
+  }, [libraryRowsByChapter]);
+
+  const selectedChapterKey = selectedChapter !== null ? chapters[selectedChapter]?.id ?? null : null;
+  const libraryRows = selectedChapterKey ? libraryRowsByChapter[selectedChapterKey] ?? [] : [];
+  const setLibraryRows = (next: string[][] | ((current: string[][]) => string[][])) => {
+    if (!selectedChapterKey) return;
+    setLibraryRowsByChapter((current) => {
+      const chapterRows = current[selectedChapterKey] ?? [];
+      const resolved = typeof next === "function" ? next(chapterRows) : next;
+      return {
+        ...current,
+        [selectedChapterKey]: resolved
+      };
+    });
+  };
 
   useEffect(() => {
     if (selectedChapter !== null && !chapters[selectedChapter]) {
@@ -1412,15 +1473,18 @@ function LibraryScreen({
   }, [initialTab]);
 
   const filteredWords = useMemo(() => {
-    if (!deferredSearch.trim()) {
-      return wordRows;
+    if (libraryEditing) {
+      return libraryRows;
     }
-    return wordRows.filter(
+    if (!deferredSearch.trim()) {
+      return libraryRows;
+    }
+    return libraryRows.filter(
       ([spanish, dutch]) =>
         spanish.toLowerCase().includes(deferredSearch.toLowerCase()) ||
         dutch.toLowerCase().includes(deferredSearch.toLowerCase())
     );
-  }, [deferredSearch]);
+  }, [deferredSearch, libraryRows, libraryEditing]);
 
   const filteredSessions =
     filter === "Alles"
@@ -1522,7 +1586,28 @@ function LibraryScreen({
                 <div style={{ fontSize: T.fs.base, fontWeight: T.fw.med, color: T.text, flex: 1 }}>
                   {chapters[selectedChapter].n} · {chapters[selectedChapter].title}
                 </div>
-                <span style={S.tag("neutral", { fontSize: T.fs.xs })}>20 woorden</span>
+                <span style={S.tag("neutral", { fontSize: T.fs.xs })}>{sanitizeRows(libraryRows).length} woorden</span>
+                <button
+                  style={S.btn("ghost", { height: 34, padding: "0 10px", fontSize: T.fs.xs })}
+                  onClick={() => {
+                    setLibraryEditing(true);
+                    setSearch("");
+                    if (libraryRows.length === 0) {
+                      setLibraryRows([["", ""]]);
+                    }
+                  }}
+                >
+                  <span aria-label="Bewerk" title="Bewerk">🖉</span>
+                </button>
+                <button
+                  style={S.btn("ghost", { height: 34, padding: "0 10px", fontSize: T.fs.xs })}
+                  onClick={() => {
+                    setLibraryRows((current) => sanitizeRows(current));
+                    setLibraryEditing(false);
+                  }}
+                >
+                  <span aria-label="Opslaan" title="Opslaan">✓</span>
+                </button>
                 <input
                   style={S.input({ height: 34, width: 180 })}
                   placeholder="Zoeken…"
@@ -1530,7 +1615,16 @@ function LibraryScreen({
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </div>
-              <WordTable rows={filteredWords} />
+              <WordTable
+                rows={filteredWords}
+                editable={libraryEditing}
+                onChange={setLibraryRows}
+                onInputTab={(index) => {
+                  if (index === libraryRows.length - 1) {
+                    setLibraryRows((current) => [...current, ["", ""]]);
+                  }
+                }}
+              />
             </div>
           ) : tab === "oefenen" ? (
             exercise ? <QuizPanel onBack={() => setExercise(null)} /> : <ExerciseChooser onSelect={setExercise} />
@@ -2000,6 +2094,18 @@ function VocabularyPanel({
   rows: string[][];
   setRows: (rows: string[][] | ((current: string[][]) => string[][])) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      const sanitized = sanitizeRows(rows);
+      window.localStorage.setItem(VOCAB_SYNC_KEY, JSON.stringify({ savedAt: new Date().toISOString(), rows: sanitized }));
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [rows]);
+
   if (uploadState === "drop") {
     return (
       <div>
@@ -2021,9 +2127,40 @@ function VocabularyPanel({
             Sleep een foto of scan hierheen
           </div>
           <div style={{ fontSize: T.fs.sm, color: T.textSec, marginBottom: 16 }}>
-            of klik om een bestand te kiezen — PNG, JPG, PDF
+            of klik om een bestand te kiezen — PNG, TXT
           </div>
-          <button style={S.btn("primary")}>Bestand kiezen</button>
+          <button style={S.btn("primary")} onClick={() => fileInputRef.current?.click()}>
+            Bestand kiezen
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.png"
+            style={{ display: "none" }}
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              setErrorMessage(null);
+
+              if (file.name.toLowerCase().endsWith(".txt")) {
+                const text = await file.text();
+                const parsedRows = text
+                  .split(/\r?\n/)
+                  .map((line) => line.trim())
+                  .filter(Boolean)
+                  .map((line) => line.split(";").map((part) => part.trim()))
+                  .filter((parts) => parts.length === 2) as string[][];
+                setRows((current) => sanitizeRows([...current, ...parsedRows]));
+                setUploadState("idle");
+                return;
+              }
+
+              if (file.name.toLowerCase().endsWith(".png")) {
+                setErrorMessage("PNG kon niet betrouwbaar worden uitgelezen. Probeer een scherpere scan of upload een .txt-bestand.");
+                setUploadState("idle");
+              }
+            }}
+          />
         </div>
         <button style={S.btn("default")} onClick={() => setUploadState("idle")}>
           Annuleren
@@ -2096,16 +2233,51 @@ function VocabularyPanel({
     );
   }
 
+  const lastIndex = rows.length - 1;
+
   return (
     <div>
       <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
         <button style={S.btn("primary")} onClick={() => setUploadState("drop")}>
           ↑ Uploaden
         </button>
-        <button style={S.btn("ghost")} onClick={() => setRows((current) => [...current, ["", ""]])}>+ Handmatig toevoegen</button>
+        <button
+          style={S.btn("ghost")}
+          onClick={() => {
+            setIsEditing(true);
+            if (rows.length === 0) {
+              setRows([["", ""]]);
+            }
+          }}
+        >
+          ✏️ Bewerk
+        </button>
+        <button
+          style={S.btn("ghost")}
+          onClick={() => {
+            setRows((current) => sanitizeRows(current));
+            setIsEditing(false);
+          }}
+        >
+          💾 Opslaan
+        </button>
         <input style={S.input({ width: 200 })} placeholder="Zoeken…" />
       </div>
-      <WordTable rows={rows} onChange={setRows} editable />
+      {errorMessage ? (
+        <div style={{ ...S.card({ marginBottom: 12, padding: "10px 14px" }), border: `1px solid ${T.accent}`, color: T.accent }}>
+          {errorMessage}
+        </div>
+      ) : null}
+      <WordTable
+        rows={rows}
+        onChange={setRows}
+        editable={isEditing}
+        onInputTab={(index) => {
+          if (index === lastIndex) {
+            setRows((current) => [...current, ["", ""]]);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -2462,11 +2634,13 @@ function ProgressBar({
 function WordTable({
   rows,
   editable = false,
-  onChange
+  onChange,
+  onInputTab
 }: {
   rows: string[][];
   editable?: boolean;
   onChange?: (rows: string[][]) => void;
+  onInputTab?: (rowIndex: number) => void;
 }) {
   return (
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -2491,7 +2665,7 @@ function WordTable({
       <tbody>
         {rows.map((row, index) => (
           <tr
-            key={`${row[0]}-${index}`}
+            key={index}
             style={{ borderBottom: `1px solid ${T.neutralLight}` }}
             onMouseEnter={(event) => {
               event.currentTarget.style.background = T.neutralLight;
@@ -2501,7 +2675,7 @@ function WordTable({
             }}
           >
             {row.map((cell, cellIndex) => (
-              <td key={`${cell}-${cellIndex}`} style={{ padding: "9px 12px", fontSize: T.fs.sm }}>
+              <td key={cellIndex} style={{ padding: "9px 12px", fontSize: T.fs.sm }}>
                 {editable ? (
                   <input
                     value={cell}
@@ -2510,6 +2684,11 @@ function WordTable({
                       const next = rows.map((r) => [...r]);
                       next[index][cellIndex] = event.target.value;
                       onChange(next);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Tab" && cellIndex === 1) {
+                        onInputTab?.(index);
+                      }
                     }}
                     style={S.input({ width: "100%", height: 30 })}
                   />

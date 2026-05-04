@@ -36,6 +36,7 @@ const wordRows = [
 
 const VOCAB_SYNC_KEY = "taalreis_vocab_latest";
 const LIBRARY_VOCAB_BY_CHAPTER_KEY = "taalreis_library_vocab_by_chapter";
+const READING_SESSIONS_KEY = "taalreis_reading_sessions";
 
 function normalizePair(spanish: string, dutch: string) {
   return `${spanish.trim().toLowerCase()}::${dutch.trim().toLowerCase()}`;
@@ -488,6 +489,7 @@ export function TaalreisApp({
             chapters={chapters}
             selectedChapterId={librarySelectedChapterId}
             initialTab={libraryInitialTab}
+            defaultLevel={settings.level}
           />
         </div>
       ) : null}
@@ -1407,11 +1409,13 @@ function ChapterScreen({
 function LibraryScreen({
   chapters,
   selectedChapterId,
-  initialTab
+  initialTab,
+  defaultLevel
 }: {
   chapters: JourneyChapter[];
   selectedChapterId: string | null;
   initialTab: "vocabulair" | "oefenen" | "geschiedenis";
+  defaultLevel: string;
 }) {
   const [tab, setTab] = useState<"vocabulair" | "oefenen" | "geschiedenis">(initialTab);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
@@ -1419,6 +1423,7 @@ function LibraryScreen({
   const [filter, setFilter] = useState("Alles");
   const [search, setSearch] = useState("");
   const [libraryRowsByChapter, setLibraryRowsByChapter] = useState<Record<string, string[][]>>({});
+  const [readingSessions, setReadingSessions] = useState<any[]>([]);
   const [libraryEditing, setLibraryEditing] = useState(false);
   const deferredSearch = useDeferredValue(search);
 
@@ -1436,6 +1441,20 @@ function LibraryScreen({
   useEffect(() => {
     window.localStorage.setItem(LIBRARY_VOCAB_BY_CHAPTER_KEY, JSON.stringify(libraryRowsByChapter));
   }, [libraryRowsByChapter]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(READING_SESSIONS_KEY);
+    if (!saved) return;
+    try {
+      setReadingSessions(JSON.parse(saved));
+    } catch {
+      setReadingSessions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(READING_SESSIONS_KEY, JSON.stringify(readingSessions));
+  }, [readingSessions]);
 
   const selectedChapterKey = selectedChapter !== null ? chapters[selectedChapter]?.id ?? null : null;
   const libraryRows = selectedChapterKey ? libraryRowsByChapter[selectedChapterKey] ?? [] : [];
@@ -1486,10 +1505,16 @@ function LibraryScreen({
     );
   }, [deferredSearch, libraryRows, libraryEditing]);
 
-  const filteredSessions =
-    filter === "Alles"
-      ? reviewSessions
-      : reviewSessions.filter((session) => session.type === filter);
+  const allHistory = [
+    ...readingSessions.map((session) => ({
+      datum: new Date(session.createdAt).toLocaleString("nl-NL", { dateStyle: "medium", timeStyle: "short" }),
+      type: "Leesvaardigheid",
+      score: session.status === "closed" ? "Afgesloten" : "Open",
+      kleur: T.accent
+    })),
+    ...reviewSessions
+  ];
+  const filteredSessions = filter === "Alles" ? allHistory : allHistory.filter((session) => session.type === filter);
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 24 }}>
@@ -1627,7 +1652,24 @@ function LibraryScreen({
               />
             </div>
           ) : tab === "oefenen" ? (
-            exercise ? <QuizPanel onBack={() => setExercise(null)} /> : <ExerciseChooser onSelect={setExercise} />
+            exercise ? (
+              exercise === "leesvaardigheid" ? (
+                <ReadingPracticePanel
+                  chapter={chapters[selectedChapter]}
+                  defaultLevel={defaultLevel}
+                  words={sanitizeRows(libraryRows)}
+                  onBack={() => setExercise(null)}
+                  onSessionSaved={(session: any) => {
+                    setReadingSessions((current) => {
+                      const others = current.filter((item) => item.id !== session.id);
+                      return [session, ...others];
+                    });
+                  }}
+                />
+              ) : (
+                <QuizPanel onBack={() => setExercise(null)} />
+              )
+            ) : <ExerciseChooser onSelect={setExercise} />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -2311,6 +2353,152 @@ function ExerciseChooser({ onSelect }: { onSelect: (value: string) => void }) {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function ReadingPracticePanel({
+  chapter,
+  defaultLevel,
+  words,
+  onBack,
+  onSessionSaved
+}: {
+  chapter: JourneyChapter;
+  defaultLevel: string;
+  words: string[][];
+  onBack: () => void;
+  onSessionSaved: (session: any) => void;
+}) {
+  const [level, setLevel] = useState(defaultLevel);
+  const [minutes, setMinutes] = useState(10);
+  const [session, setSession] = useState<any | null>(null);
+  const [showAnswers, setShowAnswers] = useState<Record<number, boolean>>({});
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+
+  const questionCount = minutes === 5 ? 6 : minutes === 10 ? 9 : 12;
+  const mcCount = Math.round((questionCount * 2) / 3);
+
+  const generateSession = () => {
+    const chapterWords = words.slice(0, 10).map(([foreignWord, dutchWord]) => `${foreignWord} (${dutchWord})`);
+    const text = `In ${chapter.title} oefent de cursist woorden zoals ${chapterWords.join(", ")}. ` +
+      `Tijdens deze leesvaardigheidsoefening op niveau ${level} leest de cursist een Nederlandse tekst die past bij het hoofdstuk. ` +
+      `De tekst is ontworpen voor ongeveer ${minutes} minuten leestijd en bevat zowel bekende als aanvullende woorden in context.`;
+    const questions = Array.from({ length: questionCount }, (_, index) => {
+      const isMc = index < mcCount;
+      if (isMc) {
+        return {
+          id: index + 1,
+          type: "mc",
+          question: `Meerkeuzevraag ${index + 1}: Wat is de beste samenvatting van alinea ${Math.min(index + 1, 3)}?`,
+          options: ["Optie A", "Optie B", "Optie C", "Optie D"],
+          modelAnswer: "Optie B"
+        };
+      }
+      return {
+        id: index + 1,
+        type: "open",
+        question: `Open vraag ${index + 1}: Leg in 1-3 zinnen uit wat de hoofdgedachte van dit deel is.`,
+        modelAnswer: "Modelantwoord: benoem kernboodschap en minstens één detail uit de tekst."
+      };
+    });
+    const nextSession = {
+      id: crypto.randomUUID(),
+      chapterId: chapter.id,
+      chapterLabel: `${chapter.n} · ${chapter.title}`,
+      level,
+      minutes,
+      createdAt: new Date().toISOString(),
+      status: "open",
+      text,
+      questions,
+      answers: {} as Record<number, string>
+    };
+    setSession(nextSession);
+    onSessionSaved(nextSession);
+  };
+
+  const updateAnswer = (questionId: number, value: string) => {
+    if (!session || session.status === "closed") return;
+    const updated = { ...session, answers: { ...session.answers, [questionId]: value } };
+    setSession(updated);
+    onSessionSaved(updated);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <button style={S.btn("default", { height: 32, width: 100, fontSize: T.fs.xs })} onClick={onBack}>← Terug</button>
+      <h2 style={{ fontSize: T.fs.lg, fontWeight: T.fw.med, margin: 0 }}>Leesvaardigheid</h2>
+      {!session ? (
+        <div style={S.card({ padding: "20px", display: "grid", gap: 12, maxWidth: 600 })}>
+          <div style={{ fontSize: T.fs.sm, color: T.textSec }}>Genereer een oefening voor {chapter.n} · {chapter.title}.</div>
+          <label style={{ fontSize: T.fs.xs }}>Niveau</label>
+          <select value={level} onChange={(event) => setLevel(event.target.value)} style={S.input({ height: 38, width: 180 }) as CSSProperties}>
+            {["A1", "A2", "B1", "B2", "C1", "C2"].map((cefr) => <option key={cefr}>{cefr}</option>)}
+          </select>
+          <label style={{ fontSize: T.fs.xs }}>Leestijd (minuten)</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[5, 10, 15].map((option) => (
+              <button key={option} style={S.btn(minutes === option ? "primary" : "default")} onClick={() => setMinutes(option)}>
+                {option}
+              </button>
+            ))}
+          </div>
+          <button style={S.btn("primary")} onClick={generateSession}>Genereer oefening</button>
+        </div>
+      ) : (
+        <>
+          <div style={S.card({ padding: "20px" })}>
+            <div style={{ fontSize: T.fs.xs, color: T.textSec, marginBottom: 10 }}>
+              Niveau {session.level} · Leestijd {session.minutes} minuten · Status: {session.status === "closed" ? "Afgesloten" : "Open"}
+            </div>
+            <p style={{ margin: 0, fontSize: T.fs.sm, lineHeight: 1.7 }}>{session.text}</p>
+          </div>
+          {session.questions.map((question: any) => (
+            <div key={question.id} style={S.card({ padding: "16px" })}>
+              <div style={{ fontSize: T.fs.xs, color: T.accent, marginBottom: 8 }}>{question.type === "mc" ? "MEERKEUZE" : "OPEN"}</div>
+              <div style={{ fontSize: T.fs.sm, marginBottom: 10 }}>{question.question}</div>
+              {question.type === "mc" ? (
+                <select
+                  value={session.answers[question.id] ?? ""}
+                  disabled={session.status === "closed"}
+                  onChange={(event) => updateAnswer(question.id, event.target.value)}
+                  style={S.input({ height: 36, width: 220 }) as CSSProperties}
+                >
+                  <option value="">Kies antwoord…</option>
+                  {question.options.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              ) : (
+                <textarea
+                  value={session.answers[question.id] ?? ""}
+                  disabled={session.status === "closed"}
+                  onChange={(event) => updateAnswer(question.id, event.target.value)}
+                  style={{ ...S.input({ height: 90 }), width: "100%", resize: "vertical" }}
+                />
+              )}
+              <div style={{ marginTop: 10 }}>
+                <button style={S.btn("ghost", { height: 30, fontSize: T.fs.xs })} onClick={() => setShowAnswers((current) => ({ ...current, [question.id]: !current[question.id] }))}>
+                  {showAnswers[question.id] ? "Verberg antwoord" : "Toon antwoord"}
+                </button>
+                {showAnswers[question.id] ? <div style={{ marginTop: 8, fontSize: T.fs.sm, color: T.textSec }}>{question.modelAnswer}</div> : null}
+              </div>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, position: "sticky", bottom: 0, background: T.bg, paddingTop: 8 }}>
+            <button style={S.btn("default")} onClick={() => setShowAnswers(Object.fromEntries(session.questions.map((q: any) => [q.id, true])))}>Controleren</button>
+            <button style={S.btn("primary")} disabled={session.status === "closed"} onClick={() => setShowCloseConfirm(true)}>Toets afsluiten</button>
+          </div>
+          {showCloseConfirm ? (
+            <div style={S.card({ padding: "14px", border: `1px solid ${T.border}` })}>
+              <div style={{ fontSize: T.fs.sm, marginBottom: 10 }}>Weet je zeker dat je deze toets wilt afsluiten? Daarna kun je niets meer aanpassen.</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button style={S.btn("primary")} onClick={() => { setSession({ ...session, status: "closed" }); setShowCloseConfirm(false); }}>Ja, afsluiten</button>
+                <button style={S.btn("default")} onClick={() => setShowCloseConfirm(false)}>Annuleren</button>
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

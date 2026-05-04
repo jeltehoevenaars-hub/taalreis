@@ -1254,6 +1254,7 @@ function ChapterScreen({
   const [tab, setTab] = useState<"woordenschat" | "oefenen">("woordenschat");
   const [uploadState, setUploadState] = useState<"idle" | "drop" | "loading" | "confirm">("idle");
   const [exercise, setExercise] = useState<string | null>(null);
+  const [activeReadingSessionId, setActiveReadingSessionId] = useState<string | null>(null);
   const [loadingPct, setLoadingPct] = useState(0);
   const [rows, setRows] = useState<string[][]>([]);
 
@@ -1507,9 +1508,10 @@ function LibraryScreen({
 
   const allHistory = [
     ...readingSessions.map((session) => ({
+      id: session.id,
       datum: new Date(session.createdAt).toLocaleString("nl-NL", { dateStyle: "medium", timeStyle: "short" }),
       type: "Leesvaardigheid",
-      score: session.status === "closed" ? "Afgesloten" : "Open",
+      score: session.finalScore ? `${session.finalScore}/10` : "Afgesloten",
       kleur: T.accent
     })),
     ...reviewSessions
@@ -1659,6 +1661,7 @@ function LibraryScreen({
                   defaultLevel={defaultLevel}
                   words={sanitizeRows(libraryRows)}
                   onBack={() => setExercise(null)}
+                  initialSession={readingSessions.find((item) => item.id === activeReadingSessionId) ?? null}
                   onSessionSaved={(session: any) => {
                     setReadingSessions((current) => {
                       const others = current.filter((item) => item.id !== session.id);
@@ -1735,6 +1738,12 @@ function LibraryScreen({
                   </span>
                   <button
                     style={S.btn("default", { height: 30, padding: "0 12px", fontSize: T.fs.xs })}
+                    onClick={() => {
+                      if (session.type !== "Leesvaardigheid" || !session.id) return;
+                      setTab("oefenen");
+                      setExercise("leesvaardigheid");
+                      setActiveReadingSessionId(session.id);
+                    }}
                   >
                     Bekijken
                   </button>
@@ -2362,19 +2371,28 @@ function ReadingPracticePanel({
   defaultLevel,
   words,
   onBack,
+  initialSession,
   onSessionSaved
 }: {
   chapter: JourneyChapter;
   defaultLevel: string;
   words: string[][];
   onBack: () => void;
+  initialSession: any | null;
   onSessionSaved: (session: any) => void;
 }) {
   const [level, setLevel] = useState(defaultLevel);
   const [minutes, setMinutes] = useState(10);
-  const [session, setSession] = useState<any | null>(null);
+  const [session, setSession] = useState<any | null>(initialSession);
   const [showAnswers, setShowAnswers] = useState<Record<number, boolean>>({});
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [scores, setScores] = useState<Record<number, string>>({});
+  const [showResult, setShowResult] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    setSession(initialSession);
+    setIsSaved(Boolean(initialSession));
+  }, [initialSession]);
 
   const questionCount = minutes === 5 ? 6 : minutes === 10 ? 9 : 12;
   const mcCount = Math.round((questionCount * 2) / 3);
@@ -2415,15 +2433,20 @@ function ReadingPracticePanel({
       answers: {} as Record<number, string>
     };
     setSession(nextSession);
-    onSessionSaved(nextSession);
+    setScores({});
+    setShowResult(false);
+    setIsSaved(false);
   };
 
   const updateAnswer = (questionId: number, value: string) => {
     if (!session || session.status === "closed") return;
     const updated = { ...session, answers: { ...session.answers, [questionId]: value } };
     setSession(updated);
-    onSessionSaved(updated);
   };
+
+  const allScored = session ? session.questions.every((question: any) => scores[question.id] === "0" || scores[question.id] === "1") : false;
+  const totalPoints = session ? session.questions.reduce((sum: number, question: any) => sum + Number(scores[question.id] ?? 0), 0) : 0;
+  const finalGrade = session ? ((totalPoints / session.questions.length) * 10).toFixed(1) : "0.0";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -2481,19 +2504,46 @@ function ReadingPracticePanel({
                   {showAnswers[question.id] ? "Verberg antwoord" : "Toon antwoord"}
                 </button>
                 {showAnswers[question.id] ? <div style={{ marginTop: 8, fontSize: T.fs.sm, color: T.textSec }}>{question.modelAnswer}</div> : null}
+                {showAnswers[question.id] ? (
+                  <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                    <label style={{ fontSize: T.fs.xs, color: T.textSec }}>Punten (0 of 1):</label>
+                    <select
+                      value={scores[question.id] ?? ""}
+                      onChange={(event) => setScores((current) => ({ ...current, [question.id]: event.target.value }))}
+                      style={S.input({ height: 32, width: 90 }) as CSSProperties}
+                    >
+                      <option value="">-</option>
+                      <option value="0">0</option>
+                      <option value="1">1</option>
+                    </select>
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, position: "sticky", bottom: 0, background: T.bg, paddingTop: 8 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 12 }}>
             <button style={S.btn("default")} onClick={() => setShowAnswers(Object.fromEntries(session.questions.map((q: any) => [q.id, true])))}>Controleren</button>
-            <button style={S.btn("primary")} disabled={session.status === "closed"} onClick={() => setShowCloseConfirm(true)}>Toets afsluiten</button>
+            {allScored ? <button style={S.btn("primary")} disabled={showResult || isSaved} onClick={() => setShowResult(true)}>Toets afsluiten</button> : null}
           </div>
-          {showCloseConfirm ? (
+          {showResult ? (
             <div style={S.card({ padding: "14px", border: `1px solid ${T.border}` })}>
-              <div style={{ fontSize: T.fs.sm, marginBottom: 10 }}>Weet je zeker dat je deze toets wilt afsluiten? Daarna kun je niets meer aanpassen.</div>
+              <div style={{ fontSize: T.fs.sm, marginBottom: 10 }}>
+                Eindcijfer: <strong>{finalGrade}</strong> (punten {totalPoints}/{session.questions.length})
+              </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button style={S.btn("primary")} onClick={() => { setSession({ ...session, status: "closed" }); setShowCloseConfirm(false); }}>Ja, afsluiten</button>
-                <button style={S.btn("default")} onClick={() => setShowCloseConfirm(false)}>Annuleren</button>
+                <button
+                  style={S.btn("primary")}
+                  disabled={isSaved}
+                  onClick={() => {
+                    const finalSession = { ...session, status: "closed", finalScore: finalGrade, awardedPoints: scores };
+                    setSession(finalSession);
+                    onSessionSaved(finalSession);
+                    setIsSaved(true);
+                  }}
+                >
+                  Opslaan
+                </button>
+                <button style={S.btn("default")} disabled={!isSaved} onClick={onBack}>Scherm sluiten</button>
               </div>
             </div>
           ) : null}

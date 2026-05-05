@@ -211,7 +211,7 @@ export async function generateReadingContentAction(input: {
                       },
                       correctAnswer: { type: "string" }
                     },
-                    required: ["type", "question", "correctAnswer"]
+                    required: ["type", "question", "options", "correctAnswer"]
                   }
                 }
               },

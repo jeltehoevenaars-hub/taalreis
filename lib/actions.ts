@@ -210,14 +210,22 @@ export async function generateReadingContentAction(input: {
       return { error: `OpenAI gaf ${parsed.questions.length} vragen terug, maar ${totalQuestions} zijn vereist.` };
     }
 
-    const normalizedQuestions = parsed.questions.map((q) => ({
-      type: q.type === "open" ? "open" : "meerkeuze",
-      question: q.question?.trim() ?? "",
-      options: q.type === "meerkeuze"
-        ? (q.options ?? []).map((option) => option.trim()).filter((option) => option.length > 0)
-        : undefined,
-      correctAnswer: q.correctAnswer?.trim() ?? ""
-    }));
+    const normalizedQuestions: GeneratedReadingQuestion[] = parsed.questions.map((q) => {
+      if (q.type === "open") {
+        return {
+          type: "open",
+          question: q.question?.trim() ?? "",
+          correctAnswer: q.correctAnswer?.trim() ?? ""
+        };
+      }
+
+      return {
+        type: "meerkeuze",
+        question: q.question?.trim() ?? "",
+        options: (q.options ?? []).map((option) => option.trim()).filter((option) => option.length > 0),
+        correctAnswer: q.correctAnswer?.trim() ?? ""
+      };
+    });
 
     const invalidMcq = normalizedQuestions.find((question) => {
       if (question.type !== "meerkeuze") return false;

@@ -9,99 +9,9 @@ import { defaultChapters } from "@/lib/default-data";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { AppUser, BootData, JourneyChapter, Screen, UserSettings } from "@/lib/types";
 import { S, T } from "@/design_handoff_taalreis/taalreis-tokens";
-
-const APP_STATE_KEY = "taalreis_state";
-const DEMO_CHAPTERS_KEY = "taalreis_chapters";
-const VIEW_KEY = "taalreis_view";
-
-const PAD = {
-  cardW: 260,
-  rowH: 160,
-  nodeY0: 60,
-  xLeft: 220,
-  xRight: 520,
-  dotSize: 12
-};
-
-const wordRows = [
-  ["comer", "eten"],
-  ["la mesa", "de tafel"],
-  ["beber", "drinken"],
-  ["el menú", "het menu"],
-  ["pedir", "bestellen"],
-  ["el camarero", "de ober"],
-  ["la cuenta", "de rekening"],
-  ["rico", "lekker"]
-];
-
-const VOCAB_SYNC_KEY = "taalreis_vocab_latest";
-const LIBRARY_VOCAB_BY_CHAPTER_KEY = "taalreis_library_vocab_by_chapter";
-const READING_HISTORY_KEY = "taalreis_reading_history";
-
-function normalizePair(spanish: string, dutch: string) {
-  return `${spanish.trim().toLowerCase()}::${dutch.trim().toLowerCase()}`;
-}
-
-function sanitizeRows(rows: string[][]) {
-  const seen = new Set<string>();
-  const unique: string[][] = [];
-
-  rows.forEach((row) => {
-    const spanish = (row[0] ?? "").trim();
-    const dutch = (row[1] ?? "").trim();
-
-    if (!spanish || !dutch) {
-      return;
-    }
-
-    const key = normalizePair(spanish, dutch);
-    if (seen.has(key)) {
-      return;
-    }
-    seen.add(key);
-    unique.push([spanish, dutch]);
-  });
-
-  return unique;
-}
-
-const reviewSessions = [
-  { datum: "2 mei 2026, 14:30", type: "Leesvaardigheid", score: "3/3", kleur: T.accent },
-  { datum: "1 mei 2026, 09:15", type: "Schrijfvaardigheid", score: "Voltooid", kleur: "#6B8FBF" },
-  { datum: "30 apr 2026, 20:00", type: "Woordenschattoets", score: "8/10", kleur: T.success },
-  { datum: "28 apr 2026, 18:45", type: "Leesvaardigheid", score: "2/3", kleur: T.accent }
-];
-
-const calendarActivity: Record<number, number> = {
-  1: 1,
-  2: 3,
-  3: 2,
-  5: 1,
-  6: 3,
-  7: 2,
-  8: 1,
-  10: 3,
-  14: 1,
-  15: 2,
-  20: 1,
-  21: 3,
-  22: 2,
-  23: 1
-};
-
-const calendarSessions: Record<number, string[]> = {
-  2: ["📖 Leesvaardigheid · 3/3", "✅ Woordenschattoets · 8/10", "✏️ Schrijfvaardigheid"],
-  6: ["✅ Woordenschattoets · 9/10", "📖 Leesvaardigheid · 3/3", "✏️ Schrijfvaardigheid"],
-  10: ["📖 Leesvaardigheid · 2/3"],
-  14: ["✅ Woordenschattoets · 7/10"],
-  21: ["📖 Leesvaardigheid · 3/3", "✅ Woordenschattoets · 10/10", "✏️ Schrijfvaardigheid"]
-};
-
-const practiceCards = [
-  { id: "woordenschat", title: "Woordenschat", copy: "Oefen en herhaal je woordparen.", icon: "🧠" },
-  { id: "leesvaardigheid", title: "Leesvaardigheid", copy: "Lees korte teksten en beantwoord vragen.", icon: "📖" },
-  { id: "schrijfvaardigheid", title: "Schrijfvaardigheid", copy: "Schrijfopdrachten met directe feedback.", icon: "✍️" }
-];
+import { APP_STATE_KEY, DEMO_CHAPTERS_KEY, VIEW_KEY, VOCAB_SYNC_KEY, LIBRARY_VOCAB_BY_CHAPTER_KEY, READING_HISTORY_KEY, PAD, wordRows, reviewSessions, calendarActivity, calendarSessions, practiceCards } from "./taalreis-app/constants";
+import { buildPath, midpointOnPath } from "./taalreis-app/utils/path";
+import { sanitizeRows } from "./taalreis-app/utils/vocabulary";
 
 type ReadingQuestion = {
   id: string;
@@ -127,44 +37,6 @@ type ReadingAttempt = {
   checkedAt?: string;
   score?: number;
 };
-
-function cubicBez(p0: number, p1: number, p2: number, p3: number, t: number) {
-  const u = 1 - t;
-  return u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
-}
-
-function midpointOnPath(index: number) {
-  const y0 = index * PAD.rowH + PAD.nodeY0;
-  const y1 = (index + 1) * PAD.rowH + PAD.nodeY0;
-  const x0 = index % 2 === 0 ? PAD.xLeft : PAD.xRight;
-  const x1 = (index + 1) % 2 === 0 ? PAD.xLeft : PAD.xRight;
-  const midY = (y0 + y1) / 2;
-  return [cubicBez(x0, x0, x1, x1, 0.5), cubicBez(y0, midY, midY, y1, 0.5)] as const;
-}
-
-function buildPath(count: number, shadow: boolean) {
-  const points: Array<[number, number]> = [];
-
-  for (let index = 0; index < count; index += 1) {
-    const y = index * PAD.rowH + PAD.nodeY0;
-    const x = index % 2 === 0 ? PAD.xLeft : PAD.xRight;
-    points.push([x + (shadow ? 2 : 0), y + (shadow ? 2 : 0)]);
-  }
-
-  if (points.length < 2) {
-    return "";
-  }
-
-  let d = `M ${points[0][0]} ${points[0][1]}`;
-  for (let index = 1; index < points.length; index += 1) {
-    const prev = points[index - 1];
-    const curr = points[index];
-    const midY = (prev[1] + curr[1]) / 2;
-    d += ` C ${prev[0]} ${midY}, ${curr[0]} ${midY}, ${curr[0]} ${curr[1]}`;
-  }
-
-  return d;
-}
 
 function getStoredState() {
   if (typeof window === "undefined") {

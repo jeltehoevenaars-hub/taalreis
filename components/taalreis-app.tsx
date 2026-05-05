@@ -1445,9 +1445,11 @@ function LibraryScreen({
   const [filter, setFilter] = useState("Alles");
   const [readingAttempts, setReadingAttempts] = useState<ReadingAttempt[]>([]);
   const [activeReadingAttemptId, setActiveReadingAttemptId] = useState<string | null>(null);
+  const [activeAttemptReadOnly, setActiveAttemptReadOnly] = useState(false);
   const [readingLevel, setReadingLevel] = useState("A2");
   const [readingDuration, setReadingDuration] = useState(10);
   const [showAnswers, setShowAnswers] = useState(false);
+  const [finalScoreVisible, setFinalScoreVisible] = useState(false);
   const [search, setSearch] = useState("");
   const [libraryRowsByChapter, setLibraryRowsByChapter] = useState<Record<string, string[][]>>({});
   const [libraryEditing, setLibraryEditing] = useState(false);
@@ -1694,14 +1696,23 @@ function LibraryScreen({
               <div style={{ display: "grid", gap: 16, maxWidth: 860 }}>
                 <h3 style={{ margin: 0 }}>Leesvaardigheid</h3>
                 {!activeReadingAttemptId ? (
-                  <div style={S.card({ padding: "20px" })}>
-                    <div style={{ fontSize: T.fs.sm, color: T.textSec, marginBottom: 12 }}>Stel je toets in en genereer daarna een verhaal.</div>
-                    <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                  <div style={S.card({ padding: "22px", border: `1px solid ${T.border}` })}>
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: T.fs.base, fontWeight: T.fw.med, color: T.text, marginBottom: 4 }}>
+                        Instellingen leesvaardigheid
+                      </div>
+                      <div style={{ fontSize: T.fs.sm, color: T.textSec, lineHeight: 1.5 }}>
+                        Kies je niveau en verwachte duur. Op basis hiervan maken we een passend verhaal met vragen.
+                      </div>
+                    </div>
+                    <div style={{ fontSize: T.fs.xs, color: T.textSec, marginBottom: 8 }}>Niveau (ERK)</div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
                       {["A1", "A2", "B1", "B2", "C1", "C2"].map((item) => (
                         <button key={item} onClick={() => setReadingLevel(item)} style={S.btn(readingLevel === item ? "primary" : "default", { height: 30 })}>{item}</button>
                       ))}
                     </div>
-                    <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: T.fs.xs, color: T.textSec, marginBottom: 8 }}>Gewenste toetstijd</div>
+                    <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
                       {[5, 10, 15, 20].map((min) => (
                         <button key={min} onClick={() => setReadingDuration(min)} style={S.btn(readingDuration === min ? "primary" : "default", { height: 30 })}>{min} min</button>
                       ))}
@@ -1713,7 +1724,9 @@ function LibraryScreen({
                         const attempt = buildReadingAttempt(chapter.id, `${chapter.n} · ${chapter.title}`, libraryRows, readingLevel, readingDuration);
                         setReadingAttempts((current) => [attempt, ...current]);
                         setActiveReadingAttemptId(attempt.id);
+                        setActiveAttemptReadOnly(false);
                         setShowAnswers(false);
+                        setFinalScoreVisible(false);
                       }}
                     >
                       Genereer verhaal
@@ -1724,6 +1737,7 @@ function LibraryScreen({
                     const attempt = readingAttempts.find((item) => item.id === activeReadingAttemptId);
                     if (!attempt) return null;
                     const allScored = attempt.questions.every((question) => typeof attempt.selfScores[question.id] === "number");
+                    const finalScore = attempt.questions.reduce((sum, q) => sum + (attempt.selfScores[q.id] ?? 0), 0);
                     return (
                       <div style={{ display: "grid", gap: 10 }}>
                         <div style={S.card()}><strong>{attempt.storyTitle}</strong><p>{attempt.story}</p></div>
@@ -1732,16 +1746,17 @@ function LibraryScreen({
                             <div>{question.question}</div>
                             {question.type === "meerkeuze" ? question.options?.map((option) => (
                               <label key={option} style={{ display: "block" }}>
-                                <input type="radio" name={question.id} checked={attempt.answers[question.id] === option} onChange={() => setReadingAttempts((current) => current.map((item) => item.id === attempt.id ? { ...item, answers: { ...item.answers, [question.id]: option } } : item))} /> {option}
+                                <input disabled={activeAttemptReadOnly} type="radio" name={question.id} checked={attempt.answers[question.id] === option} onChange={() => setReadingAttempts((current) => current.map((item) => item.id === attempt.id ? { ...item, answers: { ...item.answers, [question.id]: option } } : item))} /> {option}
                               </label>
                             )) : (
-                              <input style={S.input({ width: "100%" })} value={attempt.answers[question.id] ?? ""} onChange={(event) => setReadingAttempts((current) => current.map((item) => item.id === attempt.id ? { ...item, answers: { ...item.answers, [question.id]: event.target.value } } : item))} />
+                              <input disabled={activeAttemptReadOnly} style={S.input({ width: "100%" })} value={attempt.answers[question.id] ?? ""} onChange={(event) => setReadingAttempts((current) => current.map((item) => item.id === attempt.id ? { ...item, answers: { ...item.answers, [question.id]: event.target.value } } : item))} />
                             )}
                             {showAnswers ? <div style={{ marginTop: 6, color: T.textSec }}>Antwoord: {question.correctAnswer}</div> : null}
                             {showAnswers ? (
                               <div style={{ marginTop: 8 }}>
                                 <label style={{ fontSize: T.fs.xs, color: T.textSec }}>Jouw score (0 of 1)</label>
                                 <select
+                                  disabled={activeAttemptReadOnly}
                                   value={attempt.selfScores[question.id] ?? ""}
                                   onChange={(event) => {
                                     const value = Number(event.target.value);
@@ -1761,16 +1776,25 @@ function LibraryScreen({
                             ) : null}
                           </div>
                         ))}
+                        {finalScoreVisible ? (
+                          <div style={S.card({ background: T.accentLight })}>
+                            <strong>Eindcijfer:</strong> {finalScore}/{attempt.questions.length}
+                          </div>
+                        ) : null}
                         <div style={{ display: "flex", gap: 8 }}>
-                          <button style={S.btn("default")} onClick={() => setShowAnswers(true)}>Controleren</button>
-                          {showAnswers ? (
+                          {!activeAttemptReadOnly ? <button style={S.btn("default")} onClick={() => setShowAnswers(true)}>Controleren</button> : null}
+                          {showAnswers && !activeAttemptReadOnly ? (
                             <button disabled={!allScored} style={S.btn("primary")} onClick={() => {
-                              const scored = attempt.questions.reduce((sum, q) => sum + (attempt.selfScores[q.id] ?? 0), 0);
-                              setReadingAttempts((current) => current.map((item) => item.id === attempt.id ? { ...item, status: "completed", score: scored, checkedAt: new Date().toISOString() } : item));
+                              if (!finalScoreVisible) {
+                                setReadingAttempts((current) => current.map((item) => item.id === attempt.id ? { ...item, status: "completed", score: finalScore, checkedAt: new Date().toISOString() } : item));
+                                setFinalScoreVisible(true);
+                                return;
+                              }
                               setActiveReadingAttemptId(null);
                               setShowAnswers(false);
+                              setFinalScoreVisible(false);
                               setTab("geschiedenis");
-                            }}>Afsluiten</button>
+                            }}>{finalScoreVisible ? "Sluit scherm" : "Afsluiten"}</button>
                           ) : null}
                         </div>
                       </div>
@@ -1857,7 +1881,9 @@ function LibraryScreen({
                       setTab("oefenen");
                       setExercise("leesvaardigheid");
                       setActiveReadingAttemptId(id);
-                      setShowAnswers(false);
+                      setShowAnswers(true);
+                      setActiveAttemptReadOnly(true);
+                      setFinalScoreVisible(false);
                     }}
                     style={S.btn("default", { height: 30, padding: "0 12px", fontSize: T.fs.xs })}
                   >

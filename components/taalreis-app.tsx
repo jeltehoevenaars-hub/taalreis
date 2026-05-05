@@ -1753,31 +1753,36 @@ function LibraryScreen({
                         setReadingGenerateError(null);
                         const chapter = chapters[selectedChapter];
                         setIsGeneratingReading(true);
-                        const result = await generateReadingContentAction({
-                          chapterLabel: `${chapter.n} · ${chapter.title}`,
-                          rows: libraryRows,
-                          level: readingLevel,
-                          durationMinutes: readingDuration
-                        });
-                        setIsGeneratingReading(false);
-                        if (result.error || !result.data) {
-                          setReadingGenerateError(result.error ?? "Verhaal genereren is mislukt.");
-                          return;
+                        try {
+                          const result = await generateReadingContentAction({
+                            chapterLabel: `${chapter.n} · ${chapter.title}`,
+                            rows: libraryRows,
+                            level: readingLevel,
+                            durationMinutes: readingDuration
+                          });
+                          if (result.error || !result.data) {
+                            setReadingGenerateError(result.error ?? "Verhaal genereren is mislukt.");
+                            return;
+                          }
+                          const attempt = buildReadingAttempt(
+                            chapter.id,
+                            `${chapter.n} · ${chapter.title}`,
+                            readingLevel,
+                            readingDuration,
+                            result.data.storyTitle,
+                            result.data.story,
+                            result.data.questions
+                          );
+                          setReadingAttempts((current) => [attempt, ...current]);
+                          setActiveReadingAttemptId(attempt.id);
+                          setActiveAttemptReadOnly(false);
+                          setShowAnswers(false);
+                          setFinalScoreVisible(false);
+                        } catch {
+                          setReadingGenerateError("Verhaal genereren is mislukt door een onverwachte fout. Probeer opnieuw.");
+                        } finally {
+                          setIsGeneratingReading(false);
                         }
-                        const attempt = buildReadingAttempt(
-                          chapter.id,
-                          `${chapter.n} · ${chapter.title}`,
-                          readingLevel,
-                          readingDuration,
-                          result.data.storyTitle,
-                          result.data.story,
-                          result.data.questions
-                        );
-                        setReadingAttempts((current) => [attempt, ...current]);
-                        setActiveReadingAttemptId(attempt.id);
-                        setActiveAttemptReadOnly(false);
-                        setShowAnswers(false);
-                        setFinalScoreVisible(false);
                       }}
                     >
                       {isGeneratingReading ? "Genereren..." : "Genereer verhaal"}

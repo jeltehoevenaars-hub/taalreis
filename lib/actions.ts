@@ -206,16 +206,33 @@ export async function generateReadingContentAction(input: {
       return { error: "OpenAI response had een ongeldig formaat." };
     }
 
+    if (parsed.questions.length !== totalQuestions) {
+      return { error: `OpenAI gaf ${parsed.questions.length} vragen terug, maar ${totalQuestions} zijn vereist.` };
+    }
+
+    const normalizedQuestions = parsed.questions.map((q) => ({
+      type: q.type === "open" ? "open" : "meerkeuze",
+      question: q.question?.trim() ?? "",
+      options: q.type === "meerkeuze"
+        ? (q.options ?? []).map((option) => option.trim()).filter((option) => option.length > 0)
+        : undefined,
+      correctAnswer: q.correctAnswer?.trim() ?? ""
+    }));
+
+    const invalidMcq = normalizedQuestions.find((question) => {
+      if (question.type !== "meerkeuze") return false;
+      return !question.options || question.options.length !== 4;
+    });
+
+    if (invalidMcq) {
+      return { error: "OpenAI gaf een meerkeuzevraag zonder precies 4 antwoordopties." };
+    }
+
     return {
       data: {
         storyTitle: parsed.storyTitle?.trim() || `Leesvaardigheid · ${input.chapterLabel}`,
         story: parsed.story.trim(),
-        questions: parsed.questions.map((q) => ({
-          type: q.type === "open" ? "open" : "meerkeuze",
-          question: q.question?.trim() ?? "",
-          options: q.type === "meerkeuze" ? (q.options ?? []).slice(0, 4) : undefined,
-          correctAnswer: q.correctAnswer?.trim() ?? ""
-        }))
+        questions: normalizedQuestions
       }
     };
   } catch {

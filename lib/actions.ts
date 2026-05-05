@@ -228,8 +228,21 @@ export async function generateReadingContentAction(input: {
       return { error: `OpenAI fout (${response.status}): ${body.slice(0, 220)}` };
     }
 
-    const json = (await response.json()) as { output_text?: string };
-    const output = json.output_text?.trim();
+    const json = (await response.json()) as {
+      output_text?: string;
+      output?: Array<{
+        content?: Array<{
+          type?: string;
+          text?: string;
+        }>;
+      }>;
+    };
+    const outputFromText = json.output_text?.trim();
+    const outputFromContent = json.output
+      ?.flatMap((item) => item.content ?? [])
+      .find((contentItem) => contentItem.type === "output_text" && typeof contentItem.text === "string")
+      ?.text?.trim();
+    const output = outputFromText || outputFromContent;
     if (!output) {
       return { error: "OpenAI gaf geen tekst terug." };
     }

@@ -4,7 +4,7 @@ import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { addChapterAction, saveProfileAction, saveSettingsAction, signOutAction } from "@/lib/actions";
+import { addChapterAction, generateReadingContentAction, saveProfileAction, saveSettingsAction, signOutAction } from "@/lib/actions";
 import { defaultChapters } from "@/lib/default-data";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { AppUser, BootData, JourneyChapter, Screen, UserSettings } from "@/lib/types";
@@ -1451,6 +1451,8 @@ function LibraryScreen({
   const [readingLevel, setReadingLevel] = useState("A2");
   const [readingDuration, setReadingDuration] = useState(10);
   const [showAnswers, setShowAnswers] = useState(false);
+  const [readingGenerateError, setReadingGenerateError] = useState<string | null>(null);
+  const [isGeneratingReading, setIsGeneratingReading] = useState(false);
   const [finalScoreVisible, setFinalScoreVisible] = useState(false);
   const [search, setSearch] = useState("");
   const [libraryRowsByChapter, setLibraryRowsByChapter] = useState<Record<string, string[][]>>({});
@@ -1739,19 +1741,51 @@ function LibraryScreen({
                         <button key={min} onClick={() => setReadingDuration(min)} style={S.btn(readingDuration === min ? "primary" : "default", { height: 30 })}>{min} min</button>
                       ))}
                     </div>
+                    {readingGenerateError ? (
+                      <div style={{ ...S.card({ marginBottom: 12, padding: "10px 14px" }), border: `1px solid ${T.accent}`, color: T.accent }}>
+                        {readingGenerateError}
+                      </div>
+                    ) : null}
                     <button
                       style={S.btn("primary")}
-                      onClick={() => {
+                      disabled={isGeneratingReading}
+                      onClick={async () => {
+                        setReadingGenerateError(null);
                         const chapter = chapters[selectedChapter];
-                        const attempt = buildReadingAttempt(chapter.id, `${chapter.n} · ${chapter.title}`, libraryRows, readingLevel, readingDuration);
-                        setReadingAttempts((current) => [attempt, ...current]);
-                        setActiveReadingAttemptId(attempt.id);
-                        setActiveAttemptReadOnly(false);
-                        setShowAnswers(false);
-                        setFinalScoreVisible(false);
+                        setIsGeneratingReading(true);
+                        try {
+                          const result = await generateReadingContentAction({
+                            chapterLabel: `${chapter.n} · ${chapter.title}`,
+                            rows: libraryRows,
+                            level: readingLevel,
+                            durationMinutes: readingDuration
+                          });
+                          if (result.error || !result.data) {
+                            setReadingGenerateError(result.error ?? "Verhaal genereren is mislukt.");
+                            return;
+                          }
+                          const attempt = buildReadingAttempt(
+                            chapter.id,
+                            `${chapter.n} · ${chapter.title}`,
+                            readingLevel,
+                            readingDuration,
+                            result.data.storyTitle,
+                            result.data.story,
+                            result.data.questions
+                          );
+                          setReadingAttempts((current) => [attempt, ...current]);
+                          setActiveReadingAttemptId(attempt.id);
+                          setActiveAttemptReadOnly(false);
+                          setShowAnswers(false);
+                          setFinalScoreVisible(false);
+                        } catch {
+                          setReadingGenerateError("Verhaal genereren is mislukt door een onverwachte fout. Probeer opnieuw.");
+                        } finally {
+                          setIsGeneratingReading(false);
+                        }
                       }}
                     >
-                      Genereer verhaal
+                      {isGeneratingReading ? "Genereren..." : "Genereer verhaal"}
                     </button>
                   </div>
                 ) : (
@@ -2538,34 +2572,15 @@ function ExerciseChooser({ onSelect }: { onSelect: (value: string) => void }) {
   );
 }
 
-function buildReadingAttempt(chapterId: string, chapterLabel: string, rows: string[][], level: string, durationMinutes: number): ReadingAttempt {
-  const clean = sanitizeRows(rows);
-  const wordCount = clean.length;
-  const takeCount = Math.max(2, Math.round(wordCount * 0.12));
-  const picked = clean.slice(0, takeCount);
-  const story = `En ${chapterLabel}, Ana practica español. ${picked.map(([sp]) => `Usa la palabra "${sp}" en una frase corta.`).join(" ")} Después, habla con un amigo sobre su día y repite el vocabulario con ejemplos simples.`;
-  const totalQuestions = durationMinutes <= 5 ? 4 : durationMinutes <= 10 ? 6 : durationMinutes <= 15 ? 8 : 10;
-  const mcqCount = Math.max(1, Math.round(totalQuestions * (2 / 3)));
-  const questions: ReadingQuestion[] = [];
-  for (let index = 0; index < totalQuestions; index += 1) {
-    const pair = picked[index % picked.length] ?? clean[0] ?? ["hola", "hallo"];
-    if (index < mcqCount) {
-      questions.push({
-        id: `q-${index + 1}`,
-        type: "meerkeuze",
-        question: `Wat betekent "${pair[0]}" in de tekst?`,
-        options: [pair[1], "de trein", "de straat", "de school"],
-        correctAnswer: pair[1]
-      });
-    } else {
-      questions.push({
-        id: `q-${index + 1}`,
-        type: "open",
-        question: `Leg in het Nederlands uit wat er gebeurt rond "${pair[0]}".`,
-        correctAnswer: `Eigen antwoord, zolang "${pair[0]}" correct wordt uitgelegd in context.`
-      });
-    }
-  }
+function buildReadingAttempt(
+  chapterId: string,
+  chapterLabel: string,
+  level: string,
+  durationMinutes: number,
+  storyTitle: string,
+  story: string,
+  questions: Array<Omit<ReadingQuestion, "id">>
+): ReadingAttempt {
   return {
     id: `reading-${Date.now()}`,
     chapterId,
@@ -2574,9 +2589,9 @@ function buildReadingAttempt(chapterId: string, chapterLabel: string, rows: stri
     durationMinutes,
     level,
     createdAt: new Date().toISOString(),
-    storyTitle: `Leesvaardigheid · ${chapterLabel}`,
+    storyTitle,
     story,
-    questions,
+    questions: questions.map((question, index) => ({ ...question, id: `q-${index + 1}` })),
     answers: {}
     ,selfScores: {}
   };

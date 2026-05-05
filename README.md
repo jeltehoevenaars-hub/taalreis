@@ -39,9 +39,10 @@ Volg deze stappen precies:
    NEXT_PUBLIC_SUPABASE_ANON_KEY="<your-anon-key>"
    ```
 
-4. **Voer het database schema uit**
+4. **Voer het database schema uit (v2, latest)**
    - In Supabase: **SQL Editor → New query**.
    - Plak de inhoud van `supabase/schema.sql` en run die.
+   - Dit script is idempotent en migreert oudere installs automatisch naar de composite key op `journey_chapters (user_id, id)`.
    - Dit maakt:
      - `public.profiles`
      - `public.journey_chapters`
@@ -110,9 +111,42 @@ Synchronisatie is nu server-first via Next.js server actions:
 4. **Fallback modus zonder env vars**
    - Als Supabase env vars ontbreken, draait de app in demo mode (UI blijft bruikbaar, maar zonder echte persistente sync).
 
+
+## OpenAI koppelen met Vercel (wat je moet configureren)
+
+Gebruik deze checklist zodat server-side OpenAI calls veilig werken:
+
+1. **API key aanmaken in OpenAI**
+   - OpenAI dashboard → API keys → maak een nieuwe secret key.
+   - Bewaar de key direct; je kunt die later niet volledig terugzien.
+
+2. **Environment Variables in Vercel zetten**
+   - Vercel project → **Settings → Environment Variables**.
+   - Voeg toe:
+     - `OPENAI_API_KEY` = je secret key
+     - `OPENAI_MODEL` = `gpt-4.1-mini` (of jouw gewenste model)
+   - Scope: minimaal **Production** en **Preview** (optioneel ook Development).
+
+3. **Lokale env bijwerken**
+   - Update `.env.local` met:
+
+   ```bash
+   NEXT_PUBLIC_SUPABASE_URL="https://<project-ref>.supabase.co"
+   NEXT_PUBLIC_SUPABASE_ANON_KEY="<your-anon-key>"
+   OPENAI_API_KEY="<your-openai-key>"
+   OPENAI_MODEL="gpt-4.1-mini"
+   ```
+
+4. **Belangrijke security-regel**
+   - Gebruik `OPENAI_API_KEY` alleen server-side (Route Handlers, Server Actions).
+   - Zet nooit een OpenAI key in `NEXT_PUBLIC_*`.
+
+5. **Redeploy na env-wijziging**
+   - Na toevoegen/updaten van env vars: nieuwe deployment triggeren (of opnieuw deployen) zodat de variabelen actief zijn.
+
 ## Deployment
 
 1. Import the repository into Vercel.
-2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+2. Add `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `OPENAI_API_KEY`, and `OPENAI_MODEL`.
 3. Configure the Supabase Google provider callback to point at `/auth/callback`.
-4. Deploy.
+4. Deploy (or redeploy after env var updates).

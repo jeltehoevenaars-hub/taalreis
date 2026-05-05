@@ -186,7 +186,40 @@ export async function generateReadingContentAction(input: {
       },
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL?.trim() || "gpt-4.1-mini",
-        input: prompt
+        input: prompt,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "generated_reading_content",
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                storyTitle: { type: "string" },
+                story: { type: "string" },
+                questions: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      type: { type: "string", enum: ["meerkeuze", "open"] },
+                      question: { type: "string" },
+                      options: {
+                        type: "array",
+                        items: { type: "string" }
+                      },
+                      correctAnswer: { type: "string" }
+                    },
+                    required: ["type", "question", "options", "correctAnswer"]
+                  }
+                }
+              },
+              required: ["storyTitle", "story", "questions"]
+            },
+            strict: true
+          }
+        }
       })
     });
 
@@ -195,13 +228,33 @@ export async function generateReadingContentAction(input: {
       return { error: `OpenAI fout (${response.status}): ${body.slice(0, 220)}` };
     }
 
-    const json = (await response.json()) as { output_text?: string };
-    const output = json.output_text?.trim();
+    const json = (await response.json()) as {
+      output_text?: string;
+      output?: Array<{
+        content?: Array<{
+          type?: string;
+          text?: string;
+        }>;
+      }>;
+    };
+    const outputFromText = json.output_text?.trim();
+    const outputFromContent = json.output
+      ?.flatMap((item) => item.content ?? [])
+      .find((contentItem) => contentItem.type === "output_text" && typeof contentItem.text === "string")
+      ?.text?.trim();
+    const output = outputFromText || outputFromContent;
     if (!output) {
       return { error: "OpenAI gaf geen tekst terug." };
     }
 
-    const parsed = JSON.parse(output) as GeneratedReadingContent;
+    let parsed: GeneratedReadingContent;
+    try {
+      parsed = JSON.parse(output) as GeneratedReadingContent;
+    } catch {
+      return {
+        error: `OpenAI output kon niet als JSON geparsed worden. Eerste 120 chars: ${output.slice(0, 120)}`
+      };
+    }
     if (!parsed.story || !Array.isArray(parsed.questions) || parsed.questions.length === 0) {
       return { error: "OpenAI response had een ongeldig formaat." };
     }

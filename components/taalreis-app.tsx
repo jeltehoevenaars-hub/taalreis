@@ -1425,6 +1425,7 @@ function ChapterScreen({
             <ExerciseChooser onSelect={setExercise} />
           )}
         </div>
+          
       </div>
     </div>
   );
@@ -1446,6 +1447,7 @@ function LibraryScreen({
   const [readingAttempts, setReadingAttempts] = useState<ReadingAttempt[]>([]);
   const [activeReadingAttemptId, setActiveReadingAttemptId] = useState<string | null>(null);
   const [activeAttemptReadOnly, setActiveAttemptReadOnly] = useState(false);
+  const [historyPreviewAttemptId, setHistoryPreviewAttemptId] = useState<string | null>(null);
   const [readingLevel, setReadingLevel] = useState("A2");
   const [readingDuration, setReadingDuration] = useState(10);
   const [showAnswers, setShowAnswers] = useState(false);
@@ -1484,6 +1486,7 @@ function LibraryScreen({
 
   const selectedChapterKey = selectedChapter !== null ? chapters[selectedChapter]?.id ?? null : null;
   const activeAttempt = readingAttempts.find((item) => item.id === activeReadingAttemptId) ?? null;
+  const historyPreviewAttempt = readingAttempts.find((item) => item.id === historyPreviewAttemptId) ?? null;
   const hasRunningReadingAttempt = activeAttempt?.status === "active";
   const libraryRows = selectedChapterKey ? libraryRowsByChapter[selectedChapterKey] ?? [] : [];
   const setLibraryRows = (next: string[][] | ((current: string[][]) => string[][])) => {
@@ -1519,6 +1522,16 @@ function LibraryScreen({
     setExercise(null);
   }, [initialTab]);
 
+  useEffect(() => {
+    if (tab !== "oefenen" || !activeAttemptReadOnly) {
+      return;
+    }
+    setActiveReadingAttemptId(null);
+    setActiveAttemptReadOnly(false);
+    setShowAnswers(false);
+    setFinalScoreVisible(false);
+  }, [tab, activeAttemptReadOnly]);
+
   const filteredWords = useMemo(() => {
     if (libraryEditing) {
       return libraryRows;
@@ -1533,10 +1546,19 @@ function LibraryScreen({
     );
   }, [deferredSearch, libraryRows, libraryEditing]);
 
+  const readingHistorySessions = readingAttempts
+    .filter((item) => (selectedChapterKey ? item.chapterId === selectedChapterKey : true))
+    .map((item) => ({
+      datum: formatDateTime(item.createdAt),
+      type: "Leesvaardigheid",
+      score: item.status === "active" ? "Actief" : `${item.score ?? 0}/${item.questions.length}`,
+      kleur: item.status === "active" ? "#d97706" : T.accent,
+      attemptId: item.id
+    }));
+
+  const allHistorySessions = [...readingHistorySessions, ...reviewSessions];
   const filteredSessions =
-    filter === "Alles"
-      ? reviewSessions
-      : reviewSessions.filter((session) => session.type === filter);
+    filter === "Alles" ? allHistorySessions : allHistorySessions.filter((session) => session.type === filter);
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 24 }}>
@@ -1834,13 +1856,7 @@ function LibraryScreen({
                 </div>
               ) : null}
 
-              {[...readingAttempts.filter((item) => selectedChapterKey ? item.chapterId === selectedChapterKey : true).map((item) => ({
-                datum: formatDateTime(item.createdAt),
-                type: "Leesvaardigheid",
-                score: item.status === "active" ? "Actief" : `${item.score ?? 0}/${item.questions.length}`,
-                kleur: item.status === "active" ? "#d97706" : T.accent,
-                attemptId: item.id
-              })), ...filteredSessions].map((session, index) => (
+              {filteredSessions.map((session, index) => (
                 <div
                   key={`${session.datum}-${index}`}
                   style={S.card({
@@ -1878,12 +1894,7 @@ function LibraryScreen({
                     onClick={() => {
                       const id = (session as { attemptId?: string }).attemptId;
                       if (!id) return;
-                      setTab("oefenen");
-                      setExercise("leesvaardigheid");
-                      setActiveReadingAttemptId(id);
-                      setShowAnswers(true);
-                      setActiveAttemptReadOnly(true);
-                      setFinalScoreVisible(false);
+                      setHistoryPreviewAttemptId(id);
                     }}
                     style={S.btn("default", { height: 30, padding: "0 12px", fontSize: T.fs.xs })}
                   >
@@ -1894,6 +1905,24 @@ function LibraryScreen({
             </div>
           )}
         </div>
+          
+          {historyPreviewAttempt ? (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", display: "grid", placeItems: "center", zIndex: 30 }}>
+              <div style={S.card({ width: "min(760px, 92vw)", maxHeight: "85vh", overflowY: "auto", padding: 20 })}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: T.fs.base, fontWeight: T.fw.med }}>Leesvaardigheid · Resultaat</div>
+                    <div style={{ fontSize: T.fs.xs, color: T.textSec }}>{formatDateTime(historyPreviewAttempt.createdAt)}</div>
+                  </div>
+                  <button style={S.btn("default", { height: 30 })} onClick={() => setHistoryPreviewAttemptId(null)}>✕</button>
+                </div>
+                <div style={S.card({ background: T.accentLight, marginBottom: 12 })}>
+                  <strong>Cijfer:</strong> {historyPreviewAttempt.score ?? 0}/{historyPreviewAttempt.questions.length}
+                </div>
+                <div style={S.card()}><strong>{historyPreviewAttempt.storyTitle}</strong><p>{historyPreviewAttempt.story}</p></div>
+              </div>
+            </div>
+          ) : null}
       </div>
     </div>
   );
@@ -2073,6 +2102,7 @@ function CalendarScreen() {
             </div>
           ))}
         </div>
+          
       </div>
     </div>
   );
@@ -2682,6 +2712,7 @@ function AddChapterModal({
             Toevoegen
           </button>
         </div>
+          
       </div>
     </div>
   );

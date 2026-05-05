@@ -178,6 +178,18 @@ function getStoredState() {
   }
 }
 
+function parseLocalStorageJson<T>(key: string): T | null {
+  try {
+    return JSON.parse(window.localStorage.getItem(key) ?? "null") as T | null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveInitialScreen(savedScreen: Screen | undefined) {
+  return savedScreen && savedScreen !== "Login" ? savedScreen : "Reiskaart";
+}
+
 export function TaalreisApp({
   initialUser,
   initialChapters,
@@ -207,7 +219,7 @@ export function TaalreisApp({
     }
 
     if (initialUser) {
-      setScreen(savedScreen && savedScreen !== "Login" ? savedScreen : "Reiskaart");
+      setScreen(resolveInitialScreen(savedScreen));
       return;
     }
 
@@ -215,15 +227,11 @@ export function TaalreisApp({
 
     if (demoUser) {
       setUser(demoUser);
-      setScreen(savedScreen && savedScreen !== "Login" ? savedScreen : "Reiskaart");
-      try {
-        const localChapters = JSON.parse(
-          window.localStorage.getItem(DEMO_CHAPTERS_KEY) ?? "null"
-        ) as JourneyChapter[] | null;
-        if (localChapters?.length) {
-          setChapters(localChapters);
-        }
-      } catch {}
+      setScreen(resolveInitialScreen(savedScreen));
+      const localChapters = parseLocalStorageJson<JourneyChapter[]>(DEMO_CHAPTERS_KEY);
+      if (localChapters?.length) {
+        setChapters(localChapters);
+      }
       return;
     }
 

@@ -1,3 +1,8 @@
+-- Taalreis backend schema (v2)
+-- Safe to run multiple times in Supabase SQL Editor.
+
+create extension if not exists pgcrypto;
+
 create table if not exists public.profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   full_name text,
@@ -10,7 +15,7 @@ create table if not exists public.profiles (
 );
 
 create table if not exists public.journey_chapters (
-  id text primary key,
+  id text not null,
   user_id uuid not null references auth.users(id) on delete cascade,
   chapter_number text not null,
   title text not null,
@@ -20,11 +25,38 @@ create table if not exists public.journey_chapters (
   is_active boolean not null default false,
   sort_order integer not null,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  primary key (user_id, id)
 );
+
+-- If an older install still has a global PK on id, migrate it.
+alter table public.journey_chapters drop constraint if exists journey_chapters_pkey;
+alter table public.journey_chapters add constraint journey_chapters_pkey primary key (user_id, id);
 
 create unique index if not exists journey_chapters_user_sort_order_idx
   on public.journey_chapters (user_id, sort_order);
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists set_profiles_updated_at on public.profiles;
+create trigger set_profiles_updated_at
+before update on public.profiles
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists set_journey_chapters_updated_at on public.journey_chapters;
+create trigger set_journey_chapters_updated_at
+before update on public.journey_chapters
+for each row
+execute function public.set_updated_at();
 
 alter table public.profiles enable row level security;
 alter table public.journey_chapters enable row level security;

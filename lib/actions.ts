@@ -60,7 +60,7 @@ export async function addChapterAction(input: {
       is_active: Boolean(chapter.active),
       sort_order: chapter.sortOrder
     })),
-    { onConflict: "id" }
+    { onConflict: "user_id,id" }
   );
 
   if (error) {

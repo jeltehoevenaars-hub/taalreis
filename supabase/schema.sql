@@ -26,8 +26,34 @@ create table if not exists public.journey_chapters (
 create unique index if not exists journey_chapters_user_sort_order_idx
   on public.journey_chapters (user_id, sort_order);
 
+create table if not exists public.reading_attempts (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  chapter_id text not null references public.journey_chapters(id) on delete cascade,
+  chapter_label text not null,
+  status text not null check (status in ('active', 'completed')),
+  duration_minutes integer not null check (duration_minutes > 0),
+  level text not null,
+  story_title text not null,
+  story text not null,
+  questions jsonb not null default '[]'::jsonb,
+  answers jsonb not null default '{}'::jsonb,
+  self_scores jsonb not null default '{}'::jsonb,
+  score integer,
+  checked_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists reading_attempts_user_created_idx
+  on public.reading_attempts (user_id, created_at desc);
+
+create index if not exists reading_attempts_chapter_idx
+  on public.reading_attempts (chapter_id);
+
 alter table public.profiles enable row level security;
 alter table public.journey_chapters enable row level security;
+alter table public.reading_attempts enable row level security;
 
 drop policy if exists "Profiles are readable by owner" on public.profiles;
 create policy "Profiles are readable by owner"
@@ -51,6 +77,19 @@ create policy "Journey chapters are readable by owner"
 drop policy if exists "Journey chapters are writable by owner" on public.journey_chapters;
 create policy "Journey chapters are writable by owner"
   on public.journey_chapters
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Reading attempts are readable by owner" on public.reading_attempts;
+create policy "Reading attempts are readable by owner"
+  on public.reading_attempts
+  for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "Reading attempts are writable by owner" on public.reading_attempts;
+create policy "Reading attempts are writable by owner"
+  on public.reading_attempts
   for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);

@@ -10,6 +10,19 @@ type ActionResult<T> = {
   error?: string;
 };
 
+type GeneratedReadingQuestion = {
+  type: "meerkeuze" | "open";
+  question: string;
+  options?: string[];
+  correctAnswer: string;
+};
+
+type GeneratedReadingContent = {
+  storyTitle: string;
+  story: string;
+  questions: GeneratedReadingQuestion[];
+};
+
 export async function addChapterAction(input: {
   title: string;
   insertAfterIndex: number;
@@ -122,6 +135,92 @@ export async function signOutAction(): Promise<ActionResult<true>> {
 
   revalidatePath("/");
   return { data: true };
+}
+
+export async function generateReadingContentAction(input: {
+  chapterLabel: string;
+  level: string;
+  durationMinutes: number;
+  rows: string[][];
+}): Promise<ActionResult<GeneratedReadingContent>> {
+  const cleanedRows = input.rows
+    .map((row) => [(row[0] ?? "").trim(), (row[1] ?? "").trim()] as [string, string])
+    .filter(([spanish, dutch]) => spanish.length > 0 && dutch.length > 0);
+
+  if (cleanedRows.length === 0) {
+    return { error: "Je woordenlijst is leeg. Voeg eerst woorden toe voordat je een verhaal genereert." };
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+
+  if (!apiKey) {
+    return { error: "OPENAI_API_KEY ontbreekt op de server." };
+  }
+
+  const totalQuestions = input.durationMinutes <= 5 ? 4 : input.durationMinutes <= 10 ? 6 : input.durationMinutes <= 15 ? 8 : 10;
+  const vocabSelection = cleanedRows.slice(0, Math.min(20, cleanedRows.length));
+
+  const prompt = [
+    "Maak een Spaanse leesvaardigheidstoets voor een Nederlandse leerling.",
+    `Hoofdstuk: ${input.chapterLabel}`,
+    `Niveau: ${input.level}`,
+    `Aantal vragen: ${totalQuestions}`,
+    "Gebruik alleen woorden uit deze lijst als focus (Spaans -> Nederlands):",
+    ...vocabSelection.map(([sp, nl]) => `- ${sp} -> ${nl}`),
+    "Geef ALLEEN geldige JSON met precies dit schema:",
+    '{"storyTitle":"string","story":"string","questions":[{"type":"meerkeuze|open","question":"string","options":["string"],"correctAnswer":"string"}]}',
+    "Regels:",
+    "- story en vragen moeten in het Spaans/Nederlands passen bij het opgegeven niveau.",
+    "- Meerkeuzevragen moeten exact 4 opties hebben.",
+    "- Open vragen mogen geen options veld hebben.",
+    "- correctAnswer moet ingevuld zijn voor elke vraag.",
+    `- Lever exact ${totalQuestions} vragen.`
+  ].join("\n");
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL?.trim() || "gpt-4.1-mini",
+        input: prompt
+      })
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      return { error: `OpenAI fout (${response.status}): ${body.slice(0, 220)}` };
+    }
+
+    const json = (await response.json()) as { output_text?: string };
+    const output = json.output_text?.trim();
+    if (!output) {
+      return { error: "OpenAI gaf geen tekst terug." };
+    }
+
+    const parsed = JSON.parse(output) as GeneratedReadingContent;
+    if (!parsed.story || !Array.isArray(parsed.questions) || parsed.questions.length === 0) {
+      return { error: "OpenAI response had een ongeldig formaat." };
+    }
+
+    return {
+      data: {
+        storyTitle: parsed.storyTitle?.trim() || `Leesvaardigheid · ${input.chapterLabel}`,
+        story: parsed.story.trim(),
+        questions: parsed.questions.map((q) => ({
+          type: q.type === "open" ? "open" : "meerkeuze",
+          question: q.question?.trim() ?? "",
+          options: q.type === "meerkeuze" ? (q.options ?? []).slice(0, 4) : undefined,
+          correctAnswer: q.correctAnswer?.trim() ?? ""
+        }))
+      }
+    };
+  } catch {
+    return { error: "OpenAI aanroep mislukt. Controleer je API-configuratie en probeer opnieuw." };
+  }
 }
 
 export async function saveProfileAction(input: {

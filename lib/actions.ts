@@ -158,13 +158,22 @@ export async function generateReadingContentAction(input: {
   }
 
   const totalQuestions = input.durationMinutes <= 5 ? 4 : input.durationMinutes <= 10 ? 6 : input.durationMinutes <= 15 ? 8 : 10;
+  const storyLengthInstruction = input.durationMinutes <= 5
+    ? "Schrijf een korte tekst van ongeveer 120-170 woorden (leestijd ±5 minuten)."
+    : input.durationMinutes <= 10
+      ? "Schrijf een tekst van ongeveer 180-260 woorden (leestijd ±10 minuten)."
+      : input.durationMinutes <= 15
+        ? "Schrijf een tekst van ongeveer 270-360 woorden (leestijd ±15 minuten)."
+        : "Schrijf een uitgebreide tekst van ongeveer 370-480 woorden (leestijd 20+ minuten).";
   const vocabSelection = cleanedRows.slice(0, Math.min(20, cleanedRows.length));
 
   const prompt = [
     "Maak een Spaanse leesvaardigheidstoets voor een Nederlandse leerling.",
     `Hoofdstuk: ${input.chapterLabel}`,
     `Niveau: ${input.level}`,
+    `Doelduur: ${input.durationMinutes} minuten`,
     `Aantal vragen: ${totalQuestions}`,
+    storyLengthInstruction,
     "Gebruik alleen woorden uit deze lijst als focus (Spaans -> Nederlands):",
     ...vocabSelection.map(([sp, nl]) => `- ${sp} -> ${nl}`),
     "Geef ALLEEN geldige JSON met precies dit schema:",
@@ -174,7 +183,8 @@ export async function generateReadingContentAction(input: {
     "- Meerkeuzevragen moeten exact 4 opties hebben.",
     "- Open vragen mogen geen options veld hebben.",
     "- correctAnswer moet ingevuld zijn voor elke vraag.",
-    `- Lever exact ${totalQuestions} vragen.`
+    `- Lever exact ${totalQuestions} vragen.`,
+    "- Houd de verhaaltekst binnen de gevraagde woordlengtebandbreedte."
   ].join("\n");
 
   try {

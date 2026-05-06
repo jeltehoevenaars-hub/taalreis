@@ -159,12 +159,12 @@ export async function generateReadingContentAction(input: {
 
   const totalQuestions = input.durationMinutes <= 5 ? 4 : input.durationMinutes <= 10 ? 6 : input.durationMinutes <= 15 ? 8 : 10;
   const storyLengthInstruction = input.durationMinutes <= 5
-    ? "Schrijf een korte tekst van ongeveer 120-170 woorden (leestijd ±5 minuten)."
+    ? "Schrijf een tekst van ongeveer 675-825 woorden (uitgaande van ±150 woorden per minuut en 5 minuten leestijd)."
     : input.durationMinutes <= 10
-      ? "Schrijf een tekst van ongeveer 180-260 woorden (leestijd ±10 minuten)."
+      ? "Schrijf een tekst van ongeveer 1350-1650 woorden (uitgaande van ±150 woorden per minuut en 10 minuten leestijd)."
       : input.durationMinutes <= 15
-        ? "Schrijf een tekst van ongeveer 270-360 woorden (leestijd ±15 minuten)."
-        : "Schrijf een uitgebreide tekst van ongeveer 370-480 woorden (leestijd 20+ minuten).";
+        ? "Schrijf een tekst van ongeveer 2025-2475 woorden (uitgaande van ±150 woorden per minuut en 15 minuten leestijd)."
+        : "Schrijf een uitgebreide tekst van ongeveer 2700-3300 woorden (uitgaande van ±150 woorden per minuut en 20+ minuten leestijd).";
   const vocabSelection = cleanedRows.slice(0, Math.min(20, cleanedRows.length));
 
   const prompt = [

@@ -1535,6 +1535,24 @@ function LibraryScreen({
                   {chapters[selectedChapter].n} · {chapters[selectedChapter].title}
                 </div>
                 <span style={S.tag("neutral", { fontSize: T.fs.xs })}>{sanitizeRows(libraryRows).length} woorden</span>
+                <label style={S.btn("primary", { height: 34, padding: "0 12px", fontSize: T.fs.xs, cursor: "pointer" })}>
+                  ↑ Uploaden
+                  <input
+                    type="file"
+                    accept=".txt,.csv,text/plain,text/csv"
+                    style={{ display: "none" }}
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      const text = await file.text();
+                      const parsed = parseVocabularyBulkInput(text, { termDelimiter: "\t", cardDelimiter: "\n" });
+                      if (parsed.rows.length > 0) {
+                        setLibraryRows((current) => sanitizeRows([...current, ...parsed.rows]));
+                      }
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
                 <button
                   style={S.btn("ghost", { height: 34, padding: "0 10px", fontSize: T.fs.xs })}
                   onClick={() => {

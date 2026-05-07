@@ -2237,6 +2237,8 @@ function VocabularyPanel({
   const [cardDelimiter, setCardDelimiter] = useState<"newline" | "semicolon" | "custom">("newline");
   const [customTermDelimiter, setCustomTermDelimiter] = useState("");
   const [customCardDelimiter, setCustomCardDelimiter] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   function resetImportModal() {
     setRawInput("");
@@ -2244,6 +2246,13 @@ function VocabularyPanel({
     setCardDelimiter("newline");
     setCustomTermDelimiter("");
     setCustomCardDelimiter("");
+  }
+
+  function completeImport(nextRows: string[][] | ((current: string[][]) => string[][])) {
+    setRows(nextRows);
+    setUploadState("idle");
+    resetImportModal();
+    setIsEditing(true);
   }
 
   const parsedImportRows = useMemo(() => {
@@ -2320,18 +2329,22 @@ function VocabularyPanel({
                   termDelimiter: ";",
                   cardDelimiter: /\r?\n/
                 });
-                setRows((current) => sanitizeRows([...current, ...parsedRows]));
+                completeImport((current) => sanitizeRows([...current, ...parsedRows]));
                 if (invalidLines.length > 0) {
                   setErrorMessage(`Sommige regels konden niet worden verwerkt (${invalidLines.length}).`);
                 }
-                setUploadState("idle");
                 return;
               }
 
               if (file.name.toLowerCase().endsWith(".png")) {
                 setErrorMessage("PNG kon niet betrouwbaar worden uitgelezen. Probeer een scherpere scan of upload een .txt-bestand.");
                 setUploadState("idle");
+                return;
               }
+
+              setUploadState("idle");
+            }}
+          />
           <div
             style={{
               ...S.card({ padding: "22px", width: "100%", maxWidth: 700 }),
@@ -2424,15 +2437,19 @@ function VocabularyPanel({
               )}
             </div>
 
+            {errorMessage ? (
+              <div style={{ ...S.card({ padding: "10px 12px", marginBottom: 12 }), border: `1px solid ${T.accent}`, color: T.accent, fontSize: T.fs.sm }}>
+                {errorMessage}
+              </div>
+            ) : null}
+
             <div style={{ display: "flex", gap: 10 }}>
               <button
                 style={S.btn("primary")}
                 disabled={parsedImportRows.length === 0}
                 onClick={() => {
                   if (parsedImportRows.length === 0) return;
-                  setRows((current) => sanitizeRows([...current, ...parsedImportRows]));
-                  resetImportModal();
-                  setUploadState("idle");
+                  completeImport((current) => sanitizeRows([...current, ...parsedImportRows]));
                 }}
               >
                 Importeren

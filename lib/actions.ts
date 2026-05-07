@@ -56,22 +56,44 @@ export async function saveChaptersAction(input: {
     return { error: "Opslaan van het hoofdstuk is niet gelukt." };
   }
 
+  const insertWithSubtitle = normalized.map((chapter) => ({
+    id: chapter.id,
+    user_id: user.id,
+    chapter_number: chapter.n,
+    title: chapter.title,
+    subtitle: chapter.subtitle,
+    progress_percent: chapter.prog,
+    total_words: chapter.total,
+    is_done: Boolean(chapter.done),
+    is_active: Boolean(chapter.active),
+    sort_order: chapter.sortOrder
+  }));
+
   const { error: insertError } = await supabase.from("journey_chapters").insert(
-    normalized.map((chapter) => ({
+    insertWithSubtitle
+  );
+
+  if (insertError && insertError.message.toLowerCase().includes("subtitle")) {
+    const insertWithoutSubtitle = normalized.map((chapter) => ({
       id: chapter.id,
       user_id: user.id,
       chapter_number: chapter.n,
       title: chapter.title,
-      subtitle: chapter.subtitle,
       progress_percent: chapter.prog,
       total_words: chapter.total,
       is_done: Boolean(chapter.done),
       is_active: Boolean(chapter.active),
       sort_order: chapter.sortOrder
-    }))
-  );
+    }));
 
-  if (insertError) {
+    const { error: legacyInsertError } = await supabase
+      .from("journey_chapters")
+      .insert(insertWithoutSubtitle);
+
+    if (legacyInsertError) {
+      return { error: "Opslaan van het hoofdstuk is niet gelukt." };
+    }
+  } else if (insertError) {
     return { error: "Opslaan van het hoofdstuk is niet gelukt." };
   }
 

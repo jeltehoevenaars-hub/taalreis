@@ -101,21 +101,33 @@ export async function getBootData(): Promise<BootData> {
     };
   }
 
-  const [{ data: chaptersData, error: chaptersError }, { data: profileData }] =
-    await Promise.all([
-      supabase
-        .from("journey_chapters")
-        .select(
-          "id, chapter_number, title, subtitle, progress_percent, total_words, is_done, is_active, sort_order"
-        )
-        .eq("user_id", user.id)
-        .order("sort_order"),
-      supabase
-        .from("profiles")
-        .select("full_name, avatar_url, interface_language, level, notifications_enabled")
-        .eq("user_id", user.id)
-        .maybeSingle()
-    ]);
+  const profilePromise = supabase
+    .from("profiles")
+    .select("full_name, avatar_url, interface_language, level, notifications_enabled")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  let { data: chaptersData, error: chaptersError } = await supabase
+    .from("journey_chapters")
+    .select(
+      "id, chapter_number, title, subtitle, progress_percent, total_words, is_done, is_active, sort_order"
+    )
+    .eq("user_id", user.id)
+    .order("sort_order");
+
+  if (chaptersError && chaptersError.message.toLowerCase().includes("subtitle")) {
+    const legacyResult = await supabase
+      .from("journey_chapters")
+      .select(
+        "id, chapter_number, title, progress_percent, total_words, is_done, is_active, sort_order"
+      )
+      .eq("user_id", user.id)
+      .order("sort_order");
+    chaptersData = legacyResult.data as ChapterRow[] | null;
+    chaptersError = legacyResult.error;
+  }
+
+  const { data: profileData } = await profilePromise;
 
   let chapters: JourneyChapter[] = defaultChapters;
 

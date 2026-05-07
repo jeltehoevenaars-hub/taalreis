@@ -1137,7 +1137,27 @@ function TimelineView({
                   <span style={{ fontSize: T.fs.base, fontWeight: T.fw.med, flex: 1 }}>
                     {chapter.title}
                   </span>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}><div style={{ display: "flex", gap: 6, alignItems: "center" }}><StatusBadge chapter={chapter} /><button onClick={(event) => { event.stopPropagation(); void onEditChapter(chapter.id); }} style={{ fontSize: 11 }}>Bewerk</button><button onClick={(event) => { event.stopPropagation(); void onDeleteChapter(chapter.id); }} style={{ fontSize: 11, color: T.accent }}>Verwijder</button></div><button onClick={(event) => { event.stopPropagation(); void onEditChapter(chapter.id); }} style={{ fontSize: 11 }}>Bewerk</button><button onClick={(event) => { event.stopPropagation(); void onDeleteChapter(chapter.id); }} style={{ fontSize: 11, color: T.accent }}>Verwijder</button></div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <StatusBadge chapter={chapter} />
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void onEditChapter(chapter.id);
+                      }}
+                      style={{ fontSize: 11 }}
+                    >
+                      Bewerk
+                    </button>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void onDeleteChapter(chapter.id);
+                      }}
+                      style={{ fontSize: 11, color: T.accent }}
+                    >
+                      Verwijder
+                    </button>
+                  </div>
                   <span style={{ fontSize: T.fs.xs, color: T.textSec }}>{chapter.total} woorden</span>
                 </div>
                 <div style={{ fontSize: T.fs.xs, color: T.textSec, marginBottom: 8 }}>{chapter.subtitle}</div>

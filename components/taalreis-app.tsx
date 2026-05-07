@@ -81,6 +81,7 @@ export function TaalreisApp({
   const [variant, setVariant] = useState<"pad" | "tijdlijn">("pad");
   const [feedback, setFeedback] = useState<string | null>(null);
 
+
   useEffect(() => {
     const saved = getStoredState();
     const savedScreen = saved?.screen as Screen | undefined;
@@ -2233,7 +2234,38 @@ function VocabularyPanel({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedDelimiter, setSelectedDelimiter] = useState<";" | "," | "\t" | "|">(";");
+  const [rawImportText, setRawImportText] = useState("");
+  const [parsedRows, setParsedRows] = useState<string[][]>([]);
+  const [invalidLines, setInvalidLines] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const delimiterLabel = selectedDelimiter === "\t" ? "tab" : selectedDelimiter;
+  const expectedFormat = selectedDelimiter === "\t" ? "woord<TAB>vertaling" : `woord${selectedDelimiter}vertaling`;
+
+  const parseVocabularyText = (text: string) => {
+    const rawLines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const valid: string[][] = [];
+    const invalid: string[] = [];
+
+    rawLines.forEach((line) => {
+      const parts = line.split(selectedDelimiter).map((part) => part.trim());
+      if (parts.length === 2 && parts[0] && parts[1]) {
+        valid.push(parts);
+      } else {
+        invalid.push(line);
+      }
+    });
+
+    setParsedRows(valid);
+    setInvalidLines(invalid);
+  };
+
+  useEffect(() => {
+    if (rawImportText) {
+      parseVocabularyText(rawImportText);
+    }
+  }, [selectedDelimiter, rawImportText]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -2281,14 +2313,8 @@ function VocabularyPanel({
 
               if (file.name.toLowerCase().endsWith(".txt")) {
                 const text = await file.text();
-                const parsedRows = text
-                  .split(/\r?\n/)
-                  .map((line) => line.trim())
-                  .filter(Boolean)
-                  .map((line) => line.split(";").map((part) => part.trim()))
-                  .filter((parts) => parts.length === 2) as string[][];
-                setRows((current) => sanitizeRows([...current, ...parsedRows]));
-                setUploadState("idle");
+                setRawImportText(text);
+                parseVocabularyText(text);
                 return;
               }
 
@@ -2299,6 +2325,56 @@ function VocabularyPanel({
             }}
           />
         </div>
+        <div style={S.card({ marginBottom: 12 })}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+            <span style={{ fontSize: T.fs.sm, color: T.textSec }}>Scheidingsteken</span>
+            <select
+              style={S.select({ width: 140 })}
+              value={selectedDelimiter}
+              onChange={(event) => setSelectedDelimiter(event.target.value as ";" | "," | "\t" | "|")}
+            >
+              <option value=";">Puntkomma (;)</option>
+              <option value=",">Komma (,)</option>
+              <option value="\t">Tab</option>
+              <option value="|">Pipe (|)</option>
+            </select>
+          </div>
+          <div style={{ fontSize: T.fs.sm, marginBottom: 8 }}>
+            Geldig formaat: <strong>{expectedFormat}</strong> (geselecteerd: {delimiterLabel})
+          </div>
+          <div style={{ fontSize: T.fs.sm, color: T.textSec, marginBottom: 8 }}>
+            Geparste woordparen: <strong>{parsedRows.length}</strong>
+          </div>
+          {invalidLines.length > 0 ? (
+            <div style={{ ...S.card({ padding: "10px 12px" }), border: `1px solid ${T.accentMid}`, background: T.accentLight, marginBottom: 10 }}>
+              <div style={{ fontSize: T.fs.sm, fontWeight: T.fw.med, marginBottom: 6 }}>
+                {invalidLines.length} regel(s) konden niet worden ingelezen.
+              </div>
+              <div style={{ fontSize: T.fs.xs, color: T.textSec }}>
+                Controleer of elke regel precies 2 velden heeft met {delimiterLabel} ertussen.
+              </div>
+              <ul style={{ margin: "8px 0 0 16px", fontSize: T.fs.xs }}>
+                {invalidLines.slice(0, 3).map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <button
+            style={S.btn("primary")}
+            disabled={parsedRows.length === 0}
+            onClick={() => {
+              setRows((current) => sanitizeRows([...current, ...parsedRows]));
+              setRawImportText("");
+              setParsedRows([]);
+              setInvalidLines([]);
+              setUploadState("idle");
+            }}
+          >
+            Importeren
+          </button>
+        </div>
+
         <button style={S.btn("default")} onClick={() => setUploadState("idle")}>
           Annuleren
         </button>

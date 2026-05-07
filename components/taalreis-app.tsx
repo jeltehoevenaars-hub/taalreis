@@ -2261,6 +2261,21 @@ function VocabularyPanel({
       cardDelimiter: resolvedCardDelimiter
     });
   }, [cardDelimiter, customCardDelimiter, customTermDelimiter, rawInput, termDelimiter]);
+  const parsedRows = parsedImportResult.rows;
+  const invalidLines = parsedImportResult.invalidLines;
+
+  const resolvedTermDelimiterLabel =
+    termDelimiter === "tab" ? "tab" : termDelimiter === "comma" ? "," : customTermDelimiter || "(leeg)";
+  const resolvedCardDelimiterLabel =
+    cardDelimiter === "newline"
+      ? "nieuwe regel"
+      : cardDelimiter === "semicolon"
+        ? ";"
+        : customCardDelimiter || "(leeg)";
+  const expectedFormatExample =
+    cardDelimiter === "newline"
+      ? `woord${resolvedTermDelimiterLabel === "tab" ? "\\t" : resolvedTermDelimiterLabel}vertaling`
+      : `woord${resolvedTermDelimiterLabel === "tab" ? "\\t" : resolvedTermDelimiterLabel}vertaling${resolvedCardDelimiterLabel}woord${resolvedTermDelimiterLabel === "tab" ? "\\t" : resolvedTermDelimiterLabel}vertaling`;
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -2361,12 +2376,12 @@ function VocabularyPanel({
             </div>
 
             <div style={{ marginBottom: 12, fontSize: T.fs.sm }}>
-              <strong>Preview {parsedImportResult.rows.length} kaarten</strong>
+              <strong>Preview {parsedRows.length} kaarten</strong>
             </div>
             <div style={{ ...S.card({ padding: "10px 12px", marginBottom: 16 }), background: "#fafafa" }}>
-              {parsedImportResult.rows.length ? (
+              {parsedRows.length ? (
                 <ul style={{ margin: 0, paddingLeft: 16, fontSize: T.fs.sm }}>
-                  {parsedImportResult.rows.slice(0, 4).map((row, index) => (
+                  {parsedRows.slice(0, 4).map((row, index) => (
                     <li key={`${row[0]}-${index}`} style={{ marginBottom: 4 }}>
                       {row[0]} → {row[1]}
                     </li>
@@ -2376,14 +2391,41 @@ function VocabularyPanel({
                 <span style={{ fontSize: T.fs.sm, color: T.textSec }}>Nog geen geldige kaarten gevonden.</span>
               )}
             </div>
+            <div style={{ marginBottom: 12, fontSize: T.fs.sm, color: T.textSec }}>
+              Verwacht formaat: <code>term{resolvedTermDelimiterLabel === "tab" ? "\\t" : resolvedTermDelimiterLabel}vertaling</code>,
+              kaarten gescheiden met <code>{resolvedCardDelimiterLabel}</code>. Voorbeeld: <code>{expectedFormatExample}</code>
+            </div>
+            {invalidLines.length > 0 ? (
+              <div
+                style={{
+                  ...S.card({ padding: "10px 12px", marginBottom: 16 }),
+                  border: "1px solid #f59e0b",
+                  background: "#fffbeb"
+                }}
+              >
+                <div style={{ fontSize: T.fs.sm, fontWeight: T.fw.semi, marginBottom: 6 }}>
+                  ⚠️ {invalidLines.length} regel(s) konden niet worden ingelezen.
+                </div>
+                <div style={{ fontSize: T.fs.xs, color: T.textSec }}>
+                  Controleer of elke kaart precies één term- en kaartscheiding gebruikt.
+                </div>
+                <ul style={{ margin: "8px 0 0", paddingLeft: 16, fontSize: T.fs.xs }}>
+                  {invalidLines.slice(0, 3).map((line, index) => (
+                    <li key={`${line}-${index}`}>
+                      <code>{line}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
 
             <div style={{ display: "flex", gap: 10 }}>
               <button
                 style={S.btn("primary")}
-                disabled={parsedImportResult.rows.length === 0}
+                disabled={parsedRows.length === 0}
                 onClick={() => {
-                  if (parsedImportResult.rows.length === 0) return;
-                  setRows((current) => sanitizeRows([...current, ...parsedImportResult.rows]));
+                  if (parsedRows.length === 0) return;
+                  setRows((current) => sanitizeRows([...current, ...parsedRows]));
                   resetImportModal();
                   setUploadState("idle");
                 }}

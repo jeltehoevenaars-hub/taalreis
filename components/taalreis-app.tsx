@@ -2255,7 +2255,7 @@ function VocabularyPanel({
     setIsEditing(true);
   }
 
-  const parsedImportRows = useMemo(() => {
+  const parsedImportResult = useMemo(() => {
     const resolvedTermDelimiter =
       termDelimiter === "tab" ? "\t" : termDelimiter === "comma" ? "," : customTermDelimiter;
     const resolvedCardDelimiter =
@@ -2266,19 +2266,19 @@ function VocabularyPanel({
           : customCardDelimiter;
 
     if (!rawInput.trim() || !resolvedTermDelimiter || !resolvedCardDelimiter) {
-      return [] as string[][];
+      return { rows: [] as string[][], invalidLines: [] as string[] };
     }
 
     const normalizedSource =
       resolvedCardDelimiter === "\n" ? rawInput.replace(/\r\n/g, "\n") : rawInput;
 
-    return normalizedSource
-      .split(resolvedCardDelimiter)
-      .map((card) => card.trim())
-      .filter(Boolean)
-      .map((card) => card.split(resolvedTermDelimiter).map((part) => part.trim()))
-      .filter((parts) => parts.length === 2 && parts[0] && parts[1]);
+    return parseVocabularyBulkInput(normalizedSource, {
+      termDelimiter: resolvedTermDelimiter,
+      cardDelimiter: resolvedCardDelimiter
+    });
   }, [cardDelimiter, customCardDelimiter, customTermDelimiter, rawInput, termDelimiter]);
+  const parsedImportRows = parsedImportResult.rows;
+  const invalidLines = parsedImportResult.invalidLines;
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -2423,6 +2423,11 @@ function VocabularyPanel({
             <div style={{ marginBottom: 12, fontSize: T.fs.sm }}>
               <strong>Preview {parsedImportRows.length} kaarten</strong>
             </div>
+            <div style={{ marginBottom: 12, fontSize: T.fs.sm, color: T.textSec }}>
+              Verwacht formaat: <code>{`term${termDelimiter === "tab" ? "\\t" : termDelimiter === "comma" ? "," : customTermDelimiter || "?"}vertaling`}</code>
+              {" "}met kaarten gescheiden door{" "}
+              <code>{cardDelimiter === "newline" ? "\\n" : cardDelimiter === "semicolon" ? ";" : customCardDelimiter || "?"}</code>.
+            </div>
             <div style={{ ...S.card({ padding: "10px 12px", marginBottom: 16 }), background: "#fafafa" }}>
               {parsedImportRows.length ? (
                 <ul style={{ margin: 0, paddingLeft: 16, fontSize: T.fs.sm }}>
@@ -2436,6 +2441,19 @@ function VocabularyPanel({
                 <span style={{ fontSize: T.fs.sm, color: T.textSec }}>Nog geen geldige kaarten gevonden.</span>
               )}
             </div>
+            {invalidLines.length > 0 ? (
+              <div style={{ ...S.card({ padding: "10px 12px", marginBottom: 12 }), border: `1px solid ${T.accent}`, color: T.accent, fontSize: T.fs.sm }}>
+                <div><strong>{invalidLines.length} regels konden niet worden verwerkt.</strong></div>
+                <div>Controleer of elke kaart precies één term en één vertaling bevat.</div>
+                <ul style={{ margin: "8px 0 0", paddingLeft: 16 }}>
+                  {invalidLines.slice(0, 3).map((line, index) => (
+                    <li key={`${line}-${index}`}>
+                      <code>{line}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
 
             {errorMessage ? (
               <div style={{ ...S.card({ padding: "10px 12px", marginBottom: 12 }), border: `1px solid ${T.accent}`, color: T.accent, fontSize: T.fs.sm }}>

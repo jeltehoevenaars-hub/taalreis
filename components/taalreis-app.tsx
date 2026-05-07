@@ -1156,29 +1156,9 @@ function ChapterScreen({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"woordenschat" | "oefenen">("woordenschat");
-  const [uploadState, setUploadState] = useState<"idle" | "drop" | "loading" | "confirm">("idle");
+  const [uploadState, setUploadState] = useState<"idle" | "drop">("idle");
   const [exercise, setExercise] = useState<string | null>(null);
-  const [loadingPct, setLoadingPct] = useState(0);
   const [rows, setRows] = useState<string[][]>([]);
-
-  useEffect(() => {
-    if (uploadState !== "loading") {
-      return;
-    }
-
-    let pct = 0;
-    const interval = window.setInterval(() => {
-      pct += Math.random() * 18;
-      if (pct >= 100) {
-        pct = 100;
-        window.clearInterval(interval);
-        window.setTimeout(() => setUploadState("confirm"), 300);
-      }
-      setLoadingPct(Math.min(pct, 100));
-    }, 180);
-
-    return () => window.clearInterval(interval);
-  }, [uploadState]);
 
   return (
     <div className="chapter-layout">
@@ -1295,7 +1275,6 @@ function ChapterScreen({
             <VocabularyPanel
               uploadState={uploadState}
               setUploadState={setUploadState}
-              loadingPct={loadingPct}
               rows={rows}
               setRows={setRows}
             />
@@ -2221,13 +2200,11 @@ function SettingsScreen({
 function VocabularyPanel({
   uploadState,
   setUploadState,
-  loadingPct,
   rows,
   setRows
 }: {
-  uploadState: "idle" | "drop" | "loading" | "confirm";
-  setUploadState: (value: "idle" | "drop" | "loading" | "confirm") => void;
-  loadingPct: number;
+  uploadState: "idle" | "drop";
+  setUploadState: (value: "idle" | "drop") => void;
   rows: string[][];
   setRows: (rows: string[][] | ((current: string[][]) => string[][])) => void;
 }) {
@@ -2324,6 +2301,18 @@ function VocabularyPanel({
             </div>
 
             <label style={{ display: "block", fontSize: T.fs.sm, fontWeight: T.fw.med, marginBottom: 6 }}>Ruwe invoer</label>
+            <input
+              type="file"
+              accept=".txt,.csv,text/plain,text/csv"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                const text = await file.text();
+                setRawInput(text);
+                event.currentTarget.value = "";
+              }}
+              style={{ ...S.input(), marginBottom: 10 }}
+            />
             <textarea
               value={rawInput}
               onChange={(event) => setRawInput(event.target.value)}
@@ -2444,70 +2433,6 @@ function VocabularyPanel({
               </button>
             </div>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (uploadState === "loading") {
-    return (
-      <div style={{ ...S.card({ padding: "32px" }), textAlign: "center" }}>
-        <div style={{ fontSize: 28, marginBottom: 16 }}>⚙️</div>
-        <div style={{ fontSize: T.fs.md, fontWeight: T.fw.med, marginBottom: 6 }}>
-          Woordparen extraheren…
-        </div>
-        <div style={{ fontSize: T.fs.sm, color: T.textSec, marginBottom: 20 }}>
-          AI analyseert de tekstboekpagina
-        </div>
-        <ProgressBar pct={loadingPct} style={{ maxWidth: 300, margin: "0 auto" }} />
-        <div style={{ fontSize: T.fs.xs, color: T.textSec, marginTop: 8 }}>
-          {Math.round(loadingPct)}%
-        </div>
-      </div>
-    );
-  }
-
-  if (uploadState === "confirm") {
-    return (
-      <div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 16,
-            padding: "10px 16px",
-            background: T.successLight,
-            borderRadius: T.radius.sm,
-            border: `1px solid ${T.success}`
-          }}
-        >
-          <span style={{ color: T.success, fontSize: T.fs.base }}>✓</span>
-          <span style={{ fontSize: T.fs.sm, color: T.success, fontWeight: T.fw.med }}>
-            6 woordparen gevonden — controleer vóór opslaan
-          </span>
-        </div>
-        <div style={S.card({ marginBottom: 16 })}>
-          <WordTable
-            editable
-            onChange={setRows}
-            rows={[
-              ["el desayuno", "het ontbijt"],
-              ["la servilleta", "het servet"],
-              ["la bebida", "het drankje"],
-              ["el plato", "het bord"],
-              ["probar", "proeven"],
-              ["delicioso", "heerlijk"]
-            ]}
-          />
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button style={S.btn("primary")} onClick={() => setUploadState("idle")}>
-            Opslaan
-          </button>
-          <button style={S.btn("default")} onClick={() => setUploadState("idle")}>
-            Annuleren
-          </button>
         </div>
       </div>
     );

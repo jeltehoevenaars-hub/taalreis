@@ -2426,6 +2426,7 @@ function VocabularyPanel({
                 onClick={() => {
                   if (parsedRows.length === 0) return;
                   setRows((current) => sanitizeRows([...current, ...parsedRows]));
+                  setIsEditing(true);
                   resetImportModal();
                   setUploadState("idle");
                 }}

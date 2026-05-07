@@ -61,7 +61,13 @@ export async function addChapterAction(input: {
     done: chapter.done ?? false
   }));
 
-  const { error } = await supabase.from("journey_chapters").upsert(
+  const { error: deleteError } = await supabase.from("journey_chapters").delete().eq("user_id", user.id);
+
+  if (deleteError) {
+    return { error: "Opslaan van het hoofdstuk is niet gelukt." };
+  }
+
+  const { error: insertError } = await supabase.from("journey_chapters").insert(
     normalized.map((chapter) => ({
       id: chapter.id,
       user_id: user.id,
@@ -72,11 +78,10 @@ export async function addChapterAction(input: {
       is_done: Boolean(chapter.done),
       is_active: Boolean(chapter.active),
       sort_order: chapter.sortOrder
-    })),
-    { onConflict: "user_id,id" }
+    }))
   );
 
-  if (error) {
+  if (insertError) {
     return { error: "Opslaan van het hoofdstuk is niet gelukt." };
   }
 

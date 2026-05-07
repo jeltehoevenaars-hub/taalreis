@@ -2,6 +2,46 @@ export function normalizePair(spanish: string, dutch: string) {
   return `${spanish.trim().toLowerCase()}::${dutch.trim().toLowerCase()}`;
 }
 
+export type VocabularyBulkParseOptions = {
+  termDelimiter: string;
+  cardDelimiter: string;
+};
+
+export function parseVocabularyBulkInput(raw: string, options: VocabularyBulkParseOptions) {
+  const termDelimiter = options.termDelimiter;
+  const cardDelimiter = options.cardDelimiter;
+
+  if (!raw.trim() || !termDelimiter || !cardDelimiter) {
+    return { rows: [] as string[][], invalidLines: [] as string[] };
+  }
+
+  const normalizedSource = cardDelimiter === "\n" ? raw.replace(/\r\n/g, "\n") : raw;
+  const cards = normalizedSource.split(cardDelimiter).map((card) => card.trim()).filter(Boolean);
+
+  const rows: string[][] = [];
+  const invalidLines: string[] = [];
+
+  cards.forEach((card) => {
+    const delimiterIndex = card.indexOf(termDelimiter);
+    if (delimiterIndex === -1) {
+      invalidLines.push(card);
+      return;
+    }
+
+    const left = card.slice(0, delimiterIndex).trim();
+    const right = card.slice(delimiterIndex + termDelimiter.length).trim();
+
+    if (!left || !right) {
+      invalidLines.push(card);
+      return;
+    }
+
+    rows.push([left, right]);
+  });
+
+  return { rows, invalidLines };
+}
+
 export function sanitizeRows(rows: string[][]) {
   const seen = new Set<string>();
   const unique: string[][] = [];

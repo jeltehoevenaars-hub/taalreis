@@ -11,7 +11,7 @@ import type { AppUser, BootData, JourneyChapter, Screen, UserSettings } from "@/
 import { S, T } from "@/design_handoff_taalreis/taalreis-tokens";
 import { APP_STATE_KEY, DEMO_CHAPTERS_KEY, VIEW_KEY, VOCAB_SYNC_KEY, LIBRARY_VOCAB_BY_CHAPTER_KEY, READING_HISTORY_KEY, PAD, wordRows, reviewSessions, calendarActivity, calendarSessions, practiceCards } from "./taalreis-app/constants";
 import { buildPath, midpointOnPath } from "./taalreis-app/utils/path";
-import { sanitizeRows } from "./taalreis-app/utils/vocabulary";
+import { parseVocabularyBulkInput, sanitizeRows } from "./taalreis-app/utils/vocabulary";
 
 type ReadingQuestion = {
   id: string;
@@ -2246,7 +2246,7 @@ function VocabularyPanel({
     setCustomCardDelimiter("");
   }
 
-  const parsedImportRows = useMemo(() => {
+  const parsedImportResult = useMemo(() => {
     const resolvedTermDelimiter =
       termDelimiter === "tab" ? "\t" : termDelimiter === "comma" ? "," : customTermDelimiter;
     const resolvedCardDelimiter =
@@ -2256,19 +2256,10 @@ function VocabularyPanel({
           ? ";"
           : customCardDelimiter;
 
-    if (!rawInput.trim() || !resolvedTermDelimiter || !resolvedCardDelimiter) {
-      return [] as string[][];
-    }
-
-    const normalizedSource =
-      resolvedCardDelimiter === "\n" ? rawInput.replace(/\r\n/g, "\n") : rawInput;
-
-    return normalizedSource
-      .split(resolvedCardDelimiter)
-      .map((card) => card.trim())
-      .filter(Boolean)
-      .map((card) => card.split(resolvedTermDelimiter).map((part) => part.trim()))
-      .filter((parts) => parts.length === 2 && parts[0] && parts[1]);
+    return parseVocabularyBulkInput(rawInput, {
+      termDelimiter: resolvedTermDelimiter,
+      cardDelimiter: resolvedCardDelimiter
+    });
   }, [cardDelimiter, customCardDelimiter, customTermDelimiter, rawInput, termDelimiter]);
 
   useEffect(() => {
@@ -2370,12 +2361,12 @@ function VocabularyPanel({
             </div>
 
             <div style={{ marginBottom: 12, fontSize: T.fs.sm }}>
-              <strong>Preview {parsedImportRows.length} kaarten</strong>
+              <strong>Preview {parsedImportResult.rows.length} kaarten</strong>
             </div>
             <div style={{ ...S.card({ padding: "10px 12px", marginBottom: 16 }), background: "#fafafa" }}>
-              {parsedImportRows.length ? (
+              {parsedImportResult.rows.length ? (
                 <ul style={{ margin: 0, paddingLeft: 16, fontSize: T.fs.sm }}>
-                  {parsedImportRows.slice(0, 4).map((row, index) => (
+                  {parsedImportResult.rows.slice(0, 4).map((row, index) => (
                     <li key={`${row[0]}-${index}`} style={{ marginBottom: 4 }}>
                       {row[0]} → {row[1]}
                     </li>
@@ -2389,10 +2380,10 @@ function VocabularyPanel({
             <div style={{ display: "flex", gap: 10 }}>
               <button
                 style={S.btn("primary")}
-                disabled={parsedImportRows.length === 0}
+                disabled={parsedImportResult.rows.length === 0}
                 onClick={() => {
-                  if (parsedImportRows.length === 0) return;
-                  setRows((current) => sanitizeRows([...current, ...parsedImportRows]));
+                  if (parsedImportResult.rows.length === 0) return;
+                  setRows((current) => sanitizeRows([...current, ...parsedImportResult.rows]));
                   resetImportModal();
                   setUploadState("idle");
                 }}

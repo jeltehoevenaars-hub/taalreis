@@ -4,7 +4,7 @@ import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { addChapterAction, generateReadingContentAction, saveProfileAction, saveSettingsAction, signOutAction } from "@/lib/actions";
+import { generateReadingContentAction, saveChaptersAction, saveProfileAction, saveSettingsAction, signOutAction } from "@/lib/actions";
 import { defaultChapters } from "@/lib/default-data";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { AppUser, BootData, JourneyChapter, Screen, UserSettings } from "@/lib/types";
@@ -260,40 +260,63 @@ export function TaalreisApp({
     router.refresh();
   }
 
-  async function handleAddChapter(title: string, insertAfterIndex: number) {
+  async function persistChapters(next: JourneyChapter[]) {
     if (!supabase || !initialUser) {
-      setChapters((current) => {
-        const next = [...current];
-        next.splice(insertAfterIndex + 1, 0, {
-          id: `local-${Date.now()}`,
-          n: "",
-          title,
-          prog: 0,
-          total: 0,
-          sortOrder: insertAfterIndex + 1
-        });
-        return next.map((chapter, index) => ({
-          ...chapter,
-          n: String(index + 1).padStart(2, "0"),
-          sortOrder: index + 1
-        }));
-      });
+      setChapters(next);
       return;
     }
 
-    const result = await addChapterAction({
-      title,
-      insertAfterIndex,
-      chapters
-    });
-
+    const result = await saveChaptersAction({ chapters: next });
     if (result.error) {
       setFeedback(result.error);
       return;
     }
+    if (result.data) setChapters(result.data);
+  }
 
-    if (result.data) {
-      setChapters(result.data);
+  async function handleAddChapter(title: string, insertAfterIndex: number) {
+    if (!supabase || !initialUser) {
+      const next = [...chapters];
+      next.splice(insertAfterIndex + 1, 0, {
+        id: `local-${Date.now()}`,
+        n: "",
+        title,
+        subtitle: "",
+        prog: 0,
+        total: 0,
+        sortOrder: insertAfterIndex + 1
+      });
+      await persistChapters(next.map((chapter, index) => ({ ...chapter, n: String(index + 1).padStart(2, "0"), sortOrder: index + 1 })));
+      return;
+    }
+
+    const next = [...chapters];
+    next.splice(insertAfterIndex + 1, 0, { id: crypto.randomUUID(), n: "", title, subtitle: "", prog: 0, total: 0, sortOrder: insertAfterIndex + 1 });
+    await persistChapters(next.map((chapter, index) => ({ ...chapter, n: String(index + 1).padStart(2, "0"), sortOrder: index + 1 })));
+  }
+
+
+  async function handleEditChapter(chapterId: string) {
+    const current = chapters.find((chapter) => chapter.id === chapterId);
+    if (!current) return;
+    const title = window.prompt("Titel", current.title)?.trim();
+    if (!title) return;
+    const subtitle = window.prompt("Subtitel", current.subtitle ?? "")?.trim() ?? "";
+    const next = chapters.map((chapter) => chapter.id === chapterId ? { ...chapter, title, subtitle } : chapter);
+    await persistChapters(next);
+  }
+
+  async function handleDeleteChapter(chapterId: string) {
+    if (!window.confirm("Hoofdstuk verwijderen inclusief woorden en geschiedenis?")) return;
+    const filtered = chapters.filter((chapter) => chapter.id !== chapterId);
+    const fallback = filtered.length ? filtered : [{ id: `local-${Date.now()}`, n: "01", title: "Nieuw hoofdstuk", subtitle: "Klik om titel en subtitel aan te passen", prog: 0, total: 0, active: true, sortOrder: 1 }];
+    await persistChapters(fallback.map((chapter, index) => ({ ...chapter, n: String(index + 1).padStart(2, "0"), sortOrder: index + 1 })));
+    if (typeof window !== "undefined") {
+      const vocab = parseLocalStorageJson<Record<string, string[][]>>(LIBRARY_VOCAB_BY_CHAPTER_KEY) ?? {};
+      delete vocab[chapterId];
+      window.localStorage.setItem(LIBRARY_VOCAB_BY_CHAPTER_KEY, JSON.stringify(vocab));
+      const history = parseLocalStorageJson<ReadingAttempt[]>(READING_HISTORY_KEY) ?? [];
+      window.localStorage.setItem(READING_HISTORY_KEY, JSON.stringify(history.filter((item) => item.chapterId !== chapterId)));
     }
   }
 
@@ -382,6 +405,8 @@ export function TaalreisApp({
               setScreen("Bibliotheek");
             }}
             onAddChapter={handleAddChapter}
+            onEditChapter={handleEditChapter}
+            onDeleteChapter={handleDeleteChapter}
             variant={variant}
             onVariantChange={setVariant}
           />
@@ -755,12 +780,16 @@ function JourneyMap({
   chapters,
   onOpenChapter,
   onAddChapter,
+  onEditChapter,
+  onDeleteChapter,
   variant,
   onVariantChange
 }: {
   chapters: JourneyChapter[];
   onOpenChapter: (chapter: JourneyChapter) => void;
   onAddChapter: (title: string, insertAfterIndex: number) => Promise<void>;
+  onEditChapter: (chapterId: string) => Promise<void>;
+  onDeleteChapter: (chapterId: string) => Promise<void>;
   variant: "pad" | "tijdlijn";
   onVariantChange: (variant: "pad" | "tijdlijn") => void;
 }) {
@@ -827,9 +856,9 @@ function JourneyMap({
         </div>
 
         {variant === "pad" && !isMobile ? (
-          <PadView chapters={chapters} onOpenChapter={onOpenChapter} onAddAt={setModalState} />
+          <PadView chapters={chapters} onOpenChapter={onOpenChapter} onAddAt={setModalState} onEditChapter={onEditChapter} onDeleteChapter={onDeleteChapter} />
         ) : (
-          <TimelineView chapters={chapters} onOpenChapter={onOpenChapter} onAddAt={setModalState} />
+          <TimelineView chapters={chapters} onOpenChapter={onOpenChapter} onAddAt={setModalState} onEditChapter={onEditChapter} onDeleteChapter={onDeleteChapter} />
         )}
       </div>
 
@@ -851,11 +880,15 @@ function JourneyMap({
 function PadView({
   chapters,
   onOpenChapter,
-  onAddAt
+  onAddAt,
+  onEditChapter,
+  onDeleteChapter
 }: {
   chapters: JourneyChapter[];
   onOpenChapter: (chapter: JourneyChapter) => void;
   onAddAt: (index: number) => void;
+  onEditChapter: (chapterId: string) => Promise<void>;
+  onDeleteChapter: (chapterId: string) => Promise<void>;
 }) {
   const totalItems = chapters.length + 1;
   const svgHeight = totalItems * PAD.rowH + 60;
@@ -923,7 +956,7 @@ function PadView({
                 })
               }}
             >
-              <CardHeader chapter={chapter} />
+              <CardHeader chapter={chapter} onEditChapter={onEditChapter} onDeleteChapter={onDeleteChapter} />
               <div
                 style={{
                   fontSize: T.fs.base,
@@ -934,6 +967,7 @@ function PadView({
               >
                 {chapter.title}
               </div>
+              <div style={{ fontSize: T.fs.xs, color: T.textSec, marginBottom: 10 }}>{chapter.subtitle}</div>
               <ProgressBar pct={chapter.prog} />
               <FooterWords chapter={chapter} />
             </button>
@@ -989,11 +1023,15 @@ function PadView({
 function TimelineView({
   chapters,
   onOpenChapter,
-  onAddAt
+  onAddAt,
+  onEditChapter,
+  onDeleteChapter
 }: {
   chapters: JourneyChapter[];
   onOpenChapter: (chapter: JourneyChapter) => void;
   onAddAt: (index: number) => void;
+  onEditChapter: (chapterId: string) => Promise<void>;
+  onDeleteChapter: (chapterId: string) => Promise<void>;
 }) {
   return (
     <div>
@@ -1099,9 +1137,10 @@ function TimelineView({
                   <span style={{ fontSize: T.fs.base, fontWeight: T.fw.med, flex: 1 }}>
                     {chapter.title}
                   </span>
-                  <StatusBadge chapter={chapter} />
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}><div style={{ display: "flex", gap: 6, alignItems: "center" }}><StatusBadge chapter={chapter} /><button onClick={(event) => { event.stopPropagation(); void onEditChapter(chapter.id); }} style={{ fontSize: 11 }}>Bewerk</button><button onClick={(event) => { event.stopPropagation(); void onDeleteChapter(chapter.id); }} style={{ fontSize: 11, color: T.accent }}>Verwijder</button></div><button onClick={(event) => { event.stopPropagation(); void onEditChapter(chapter.id); }} style={{ fontSize: 11 }}>Bewerk</button><button onClick={(event) => { event.stopPropagation(); void onDeleteChapter(chapter.id); }} style={{ fontSize: 11, color: T.accent }}>Verwijder</button></div>
                   <span style={{ fontSize: T.fs.xs, color: T.textSec }}>{chapter.total} woorden</span>
                 </div>
+                <div style={{ fontSize: T.fs.xs, color: T.textSec, marginBottom: 8 }}>{chapter.subtitle}</div>
                 <ProgressBar pct={chapter.prog} />
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
                   <span style={{ fontSize: T.fs.xs, color: T.textSec }}>Progress</span>
@@ -2824,7 +2863,7 @@ function Field({
   );
 }
 
-function CardHeader({ chapter }: { chapter: JourneyChapter }) {
+function CardHeader({ chapter, onEditChapter, onDeleteChapter }: { chapter: JourneyChapter; onEditChapter: (chapterId: string) => Promise<void>; onDeleteChapter: (chapterId: string) => Promise<void> }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
       <span style={{ fontSize: T.fs.xs, color: T.textSec, fontWeight: T.fw.med }}>{chapter.n}</span>

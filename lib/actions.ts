@@ -23,9 +23,7 @@ type GeneratedReadingContent = {
   questions: GeneratedReadingQuestion[];
 };
 
-export async function addChapterAction(input: {
-  title: string;
-  insertAfterIndex: number;
+export async function saveChaptersAction(input: {
   chapters: JourneyChapter[];
 }): Promise<ActionResult<JourneyChapter[]>> {
   const supabase = await createServerSupabaseClient();
@@ -42,21 +40,12 @@ export async function addChapterAction(input: {
     return { error: "Je sessie is verlopen. Log opnieuw in." };
   }
 
-  const next = [...input.chapters];
-  const insertAt = input.insertAfterIndex + 1;
-  next.splice(insertAt, 0, {
-    id: crypto.randomUUID(),
-    n: "",
-    title: input.title.trim(),
-    prog: 0,
-    total: 0,
-    sortOrder: insertAt + 1
-  });
-
-  const normalized = next.map((chapter, index) => ({
+  const normalized = input.chapters.map((chapter, index) => ({
     ...chapter,
     n: String(index + 1).padStart(2, "0"),
     sortOrder: index + 1,
+    title: chapter.title.trim(),
+    subtitle: (chapter.subtitle ?? "").trim(),
     active: chapter.active ?? false,
     done: chapter.done ?? false
   }));
@@ -73,6 +62,7 @@ export async function addChapterAction(input: {
       user_id: user.id,
       chapter_number: chapter.n,
       title: chapter.title,
+      subtitle: chapter.subtitle,
       progress_percent: chapter.prog,
       total_words: chapter.total,
       is_done: Boolean(chapter.done),

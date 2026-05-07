@@ -62,6 +62,14 @@ function resolveInitialScreen(savedScreen: Screen | undefined) {
   return savedScreen && savedScreen !== "Login" ? savedScreen : "Reiskaart";
 }
 
+function createChapterId(prefix: "local" | "remote") {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) {
+    return prefix === "local" ? `local-${uuid}` : uuid;
+  }
+  return `${prefix}-${Date.now()}-${Math.round(Math.random() * 10000)}`;
+}
+
 export function TaalreisApp({
   initialUser,
   initialChapters,
@@ -278,7 +286,7 @@ export function TaalreisApp({
     if (!supabase || !initialUser) {
       const next = [...chapters];
       next.splice(insertAfterIndex + 1, 0, {
-        id: `local-${Date.now()}`,
+        id: createChapterId("local"),
         n: "",
         title,
         subtitle: "",
@@ -291,7 +299,7 @@ export function TaalreisApp({
     }
 
     const next = [...chapters];
-    next.splice(insertAfterIndex + 1, 0, { id: crypto.randomUUID(), n: "", title, subtitle: "", prog: 0, total: 0, sortOrder: insertAfterIndex + 1 });
+    next.splice(insertAfterIndex + 1, 0, { id: createChapterId("remote"), n: "", title, subtitle: "", prog: 0, total: 0, sortOrder: insertAfterIndex + 1 });
     await persistChapters(next.map((chapter, index) => ({ ...chapter, n: String(index + 1).padStart(2, "0"), sortOrder: index + 1 })));
   }
 
@@ -309,7 +317,7 @@ export function TaalreisApp({
   async function handleDeleteChapter(chapterId: string) {
     if (!window.confirm("Hoofdstuk verwijderen inclusief woorden en geschiedenis?")) return;
     const filtered = chapters.filter((chapter) => chapter.id !== chapterId);
-    const fallback = filtered.length ? filtered : [{ id: `local-${Date.now()}`, n: "01", title: "Nieuw hoofdstuk", subtitle: "Klik om titel en subtitel aan te passen", prog: 0, total: 0, active: true, sortOrder: 1 }];
+    const fallback = filtered.length ? filtered : [{ id: createChapterId("local"), n: "01", title: "Nieuw hoofdstuk", subtitle: "Klik om titel en subtitel aan te passen", prog: 0, total: 0, active: true, sortOrder: 1 }];
     await persistChapters(fallback.map((chapter, index) => ({ ...chapter, n: String(index + 1).padStart(2, "0"), sortOrder: index + 1 })));
     if (typeof window !== "undefined") {
       const vocab = parseLocalStorageJson<Record<string, string[][]>>(LIBRARY_VOCAB_BY_CHAPTER_KEY) ?? {};
@@ -1137,27 +1145,7 @@ function TimelineView({
                   <span style={{ fontSize: T.fs.base, fontWeight: T.fw.med, flex: 1 }}>
                     {chapter.title}
                   </span>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <StatusBadge chapter={chapter} />
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void onEditChapter(chapter.id);
-                      }}
-                      style={{ fontSize: 11 }}
-                    >
-                      Bewerk
-                    </button>
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void onDeleteChapter(chapter.id);
-                      }}
-                      style={{ fontSize: 11, color: T.accent }}
-                    >
-                      Verwijder
-                    </button>
-                  </div>
+                  <ChapterActionsMenu chapterId={chapter.id} onEditChapter={onEditChapter} onDeleteChapter={onDeleteChapter} />
                   <span style={{ fontSize: T.fs.xs, color: T.textSec }}>{chapter.total} woorden</span>
                 </div>
                 <div style={{ fontSize: T.fs.xs, color: T.textSec, marginBottom: 8 }}>{chapter.subtitle}</div>
@@ -2887,19 +2875,9 @@ function CardHeader({ chapter, onEditChapter, onDeleteChapter }: { chapter: Jour
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
       <span style={{ fontSize: T.fs.xs, color: T.textSec, fontWeight: T.fw.med }}>{chapter.n}</span>
-      <StatusBadge chapter={chapter} />
+      <ChapterActionsMenu chapterId={chapter.id} onEditChapter={onEditChapter} onDeleteChapter={onDeleteChapter} />
     </div>
   );
-}
-
-function StatusBadge({ chapter }: { chapter: JourneyChapter }) {
-  if (chapter.done) {
-    return <span style={S.tag("accent", { fontSize: 10 })}>✓ Klaar</span>;
-  }
-  if (chapter.active) {
-    return <span style={S.tag("accent", { fontSize: 10 })}>▶ Bezig</span>;
-  }
-  return null;
 }
 
 function FooterWords({ chapter }: { chapter: JourneyChapter }) {
@@ -2907,6 +2885,73 @@ function FooterWords({ chapter }: { chapter: JourneyChapter }) {
     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
       <span style={{ fontSize: T.fs.xs, color: T.textSec }}>Progress</span>
       <span style={{ fontSize: T.fs.xs, color: T.textSec }}>{chapter.total} woorden</span>
+    </div>
+  );
+}
+
+function ChapterActionsMenu({
+  chapterId,
+  onEditChapter,
+  onDeleteChapter
+}: {
+  chapterId: string;
+  onEditChapter: (chapterId: string) => Promise<void>;
+  onDeleteChapter: (chapterId: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ position: "relative" }} onClick={(event) => event.stopPropagation()}>
+      <button
+        aria-label="Hoofdstuk acties"
+        title="Bewerk hoofdstuk"
+        onClick={() => setOpen((current) => !current)}
+        style={{
+          border: `1px solid ${T.border}`,
+          background: T.surface,
+          borderRadius: T.radius.sm,
+          width: 26,
+          height: 26,
+          display: "grid",
+          placeItems: "center",
+          cursor: "pointer",
+          color: T.textSec
+        }}
+      >
+        <span aria-hidden="true" style={{ fontSize: 13 }}>🖉</span>
+      </button>
+
+      {open ? (
+        <div
+          style={{
+            position: "absolute",
+            right: 0,
+            top: 30,
+            minWidth: 128,
+            zIndex: 30,
+            ...S.card({ padding: 6, boxShadow: T.shadow.md })
+          }}
+        >
+          <button
+            onClick={() => {
+              setOpen(false);
+              void onEditChapter(chapterId);
+            }}
+            style={{ ...S.btn("ghost", { width: "100%", justifyContent: "flex-start", height: 34 }), fontSize: T.fs.sm }}
+          >
+            ✏️ Bewerk
+          </button>
+          <button
+            onClick={() => {
+              setOpen(false);
+              void onDeleteChapter(chapterId);
+            }}
+            style={{ ...S.btn("ghost", { width: "100%", justifyContent: "flex-start", height: 34 }), fontSize: T.fs.sm, color: T.accent }}
+          >
+            🗑️ Verwijder
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

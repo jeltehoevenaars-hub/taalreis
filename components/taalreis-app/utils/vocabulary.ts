@@ -15,7 +15,10 @@ export function parseVocabularyBulkInput(raw: string, options: VocabularyBulkPar
     return { rows: [] as string[][], invalidLines: [] as string[] };
   }
 
-  const normalizedSource = cardDelimiter === "\n" ? raw.replace(/\r\n/g, "\n") : raw;
+  const normalizedSource = raw
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+    .replace(/\u00A0/g, " ");
   const cards = normalizedSource.split(cardDelimiter).map((card) => card.trim()).filter(Boolean);
 
   const rows: string[][] = [];

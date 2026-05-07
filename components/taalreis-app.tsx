@@ -1156,29 +1156,9 @@ function ChapterScreen({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"woordenschat" | "oefenen">("woordenschat");
-  const [uploadState, setUploadState] = useState<"idle" | "drop" | "loading" | "confirm">("idle");
+  const [uploadState, setUploadState] = useState<"idle" | "drop">("idle");
   const [exercise, setExercise] = useState<string | null>(null);
-  const [loadingPct, setLoadingPct] = useState(0);
   const [rows, setRows] = useState<string[][]>([]);
-
-  useEffect(() => {
-    if (uploadState !== "loading") {
-      return;
-    }
-
-    let pct = 0;
-    const interval = window.setInterval(() => {
-      pct += Math.random() * 18;
-      if (pct >= 100) {
-        pct = 100;
-        window.clearInterval(interval);
-        window.setTimeout(() => setUploadState("confirm"), 300);
-      }
-      setLoadingPct(Math.min(pct, 100));
-    }, 180);
-
-    return () => window.clearInterval(interval);
-  }, [uploadState]);
 
   return (
     <div className="chapter-layout">
@@ -1295,7 +1275,6 @@ function ChapterScreen({
             <VocabularyPanel
               uploadState={uploadState}
               setUploadState={setUploadState}
-              loadingPct={loadingPct}
               rows={rows}
               setRows={setRows}
             />
@@ -1337,6 +1316,10 @@ function LibraryScreen({
   const [search, setSearch] = useState("");
   const [libraryRowsByChapter, setLibraryRowsByChapter] = useState<Record<string, string[][]>>({});
   const [libraryEditing, setLibraryEditing] = useState(false);
+  const [showLibraryImport, setShowLibraryImport] = useState(false);
+  const [libraryRawInput, setLibraryRawInput] = useState("");
+  const [libraryTermDelimiter, setLibraryTermDelimiter] = useState<"tab" | "comma">("tab");
+  const [libraryCardDelimiter, setLibraryCardDelimiter] = useState<"newline" | "semicolon">("newline");
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -1427,6 +1410,14 @@ function LibraryScreen({
         dutch.toLowerCase().includes(deferredSearch.toLowerCase())
     );
   }, [deferredSearch, libraryRows, libraryEditing]);
+  const libraryParsed = useMemo(
+    () =>
+      parseVocabularyBulkInput(libraryRawInput, {
+        termDelimiter: libraryTermDelimiter === "tab" ? "\t" : ",",
+        cardDelimiter: libraryCardDelimiter === "newline" ? "\n" : ";"
+      }),
+    [libraryCardDelimiter, libraryRawInput, libraryTermDelimiter]
+  );
 
   const readingHistorySessions = readingAttempts
     .filter((item) => (selectedChapterKey ? item.chapterId === selectedChapterKey : true))
@@ -1557,6 +1548,12 @@ function LibraryScreen({
                 </div>
                 <span style={S.tag("neutral", { fontSize: T.fs.xs })}>{sanitizeRows(libraryRows).length} woorden</span>
                 <button
+                  style={S.btn("primary", { height: 34, padding: "0 12px", fontSize: T.fs.xs })}
+                  onClick={() => setShowLibraryImport(true)}
+                >
+                  ↑ Uploaden
+                </button>
+                <button
                   style={S.btn("ghost", { height: 34, padding: "0 10px", fontSize: T.fs.xs })}
                   onClick={() => {
                     setLibraryEditing(true);
@@ -1594,6 +1591,50 @@ function LibraryScreen({
                   }
                 }}
               />
+              {showLibraryImport ? (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.38)", zIndex: 1100, padding: 20 }}>
+                  <div style={{ ...S.card({ padding: "16px", width: "100%" }), maxWidth: 960, margin: "0 auto", maxHeight: "88vh", overflowY: "auto" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <strong>Importeer je gegevens</strong>
+                      <button style={S.btn("default", { height: 28 })} onClick={() => setShowLibraryImport(false)}>✕</button>
+                    </div>
+                    <div style={{ fontSize: T.fs.sm, color: T.textSec, marginBottom: 8 }}>Kopieer en plak je gegevens hier.</div>
+                    <textarea
+                      value={libraryRawInput}
+                      onChange={(event) => setLibraryRawInput(event.target.value)}
+                      placeholder={"Woord 1\tDefinitie 1\nWoord 2\tDefinitie 2"}
+                      style={{ ...S.input(), minHeight: 150, resize: "vertical", marginBottom: 12 }}
+                    />
+                    <div style={{ display: "flex", gap: 24, marginBottom: 12, fontSize: T.fs.sm }}>
+                      <div>
+                        <div style={{ fontWeight: T.fw.med }}>Tussen term en definitie</div>
+                        <label style={{ display: "block" }}><input type="radio" checked={libraryTermDelimiter === "tab"} onChange={() => setLibraryTermDelimiter("tab")} /> Tab</label>
+                        <label style={{ display: "block" }}><input type="radio" checked={libraryTermDelimiter === "comma"} onChange={() => setLibraryTermDelimiter("comma")} /> Komma</label>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: T.fw.med }}>Tussen kaarten</div>
+                        <label style={{ display: "block" }}><input type="radio" checked={libraryCardDelimiter === "newline"} onChange={() => setLibraryCardDelimiter("newline")} /> Nieuwe regel</label>
+                        <label style={{ display: "block" }}><input type="radio" checked={libraryCardDelimiter === "semicolon"} onChange={() => setLibraryCardDelimiter("semicolon")} /> Puntkomma</label>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: T.fs.sm, marginBottom: 12 }}>Preview {libraryParsed.rows.length} kaarten</div>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      <button style={S.btn("default")} onClick={() => setShowLibraryImport(false)}>Annuleren</button>
+                      <button
+                        style={S.btn("primary")}
+                        disabled={libraryParsed.rows.length === 0}
+                        onClick={() => {
+                          setLibraryRows((current) => sanitizeRows([...current, ...libraryParsed.rows]));
+                          setLibraryRawInput("");
+                          setShowLibraryImport(false);
+                        }}
+                      >
+                        Importeren
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : tab === "oefenen" ? (
             exercise === "leesvaardigheid" ? (
@@ -2221,13 +2262,11 @@ function SettingsScreen({
 function VocabularyPanel({
   uploadState,
   setUploadState,
-  loadingPct,
   rows,
   setRows
 }: {
-  uploadState: "idle" | "drop" | "loading" | "confirm";
-  setUploadState: (value: "idle" | "drop" | "loading" | "confirm") => void;
-  loadingPct: number;
+  uploadState: "idle" | "drop";
+  setUploadState: (value: "idle" | "drop") => void;
   rows: string[][];
   setRows: (rows: string[][] | ((current: string[][]) => string[][])) => void;
 }) {
@@ -2324,6 +2363,18 @@ function VocabularyPanel({
             </div>
 
             <label style={{ display: "block", fontSize: T.fs.sm, fontWeight: T.fw.med, marginBottom: 6 }}>Ruwe invoer</label>
+            <input
+              type="file"
+              accept=".txt,.csv,text/plain,text/csv"
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                const text = await file.text();
+                setRawInput(text);
+                event.currentTarget.value = "";
+              }}
+              style={{ ...S.input(), marginBottom: 10 }}
+            />
             <textarea
               value={rawInput}
               onChange={(event) => setRawInput(event.target.value)}
@@ -2444,70 +2495,6 @@ function VocabularyPanel({
               </button>
             </div>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (uploadState === "loading") {
-    return (
-      <div style={{ ...S.card({ padding: "32px" }), textAlign: "center" }}>
-        <div style={{ fontSize: 28, marginBottom: 16 }}>⚙️</div>
-        <div style={{ fontSize: T.fs.md, fontWeight: T.fw.med, marginBottom: 6 }}>
-          Woordparen extraheren…
-        </div>
-        <div style={{ fontSize: T.fs.sm, color: T.textSec, marginBottom: 20 }}>
-          AI analyseert de tekstboekpagina
-        </div>
-        <ProgressBar pct={loadingPct} style={{ maxWidth: 300, margin: "0 auto" }} />
-        <div style={{ fontSize: T.fs.xs, color: T.textSec, marginTop: 8 }}>
-          {Math.round(loadingPct)}%
-        </div>
-      </div>
-    );
-  }
-
-  if (uploadState === "confirm") {
-    return (
-      <div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 16,
-            padding: "10px 16px",
-            background: T.successLight,
-            borderRadius: T.radius.sm,
-            border: `1px solid ${T.success}`
-          }}
-        >
-          <span style={{ color: T.success, fontSize: T.fs.base }}>✓</span>
-          <span style={{ fontSize: T.fs.sm, color: T.success, fontWeight: T.fw.med }}>
-            6 woordparen gevonden — controleer vóór opslaan
-          </span>
-        </div>
-        <div style={S.card({ marginBottom: 16 })}>
-          <WordTable
-            editable
-            onChange={setRows}
-            rows={[
-              ["el desayuno", "het ontbijt"],
-              ["la servilleta", "het servet"],
-              ["la bebida", "het drankje"],
-              ["el plato", "het bord"],
-              ["probar", "proeven"],
-              ["delicioso", "heerlijk"]
-            ]}
-          />
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button style={S.btn("primary")} onClick={() => setUploadState("idle")}>
-            Opslaan
-          </button>
-          <button style={S.btn("default")} onClick={() => setUploadState("idle")}>
-            Annuleren
-          </button>
         </div>
       </div>
     );

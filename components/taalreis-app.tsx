@@ -1316,6 +1316,10 @@ function LibraryScreen({
   const [search, setSearch] = useState("");
   const [libraryRowsByChapter, setLibraryRowsByChapter] = useState<Record<string, string[][]>>({});
   const [libraryEditing, setLibraryEditing] = useState(false);
+  const [showLibraryImport, setShowLibraryImport] = useState(false);
+  const [libraryRawInput, setLibraryRawInput] = useState("");
+  const [libraryTermDelimiter, setLibraryTermDelimiter] = useState<"tab" | "comma">("tab");
+  const [libraryCardDelimiter, setLibraryCardDelimiter] = useState<"newline" | "semicolon">("newline");
   const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
@@ -1406,6 +1410,14 @@ function LibraryScreen({
         dutch.toLowerCase().includes(deferredSearch.toLowerCase())
     );
   }, [deferredSearch, libraryRows, libraryEditing]);
+  const libraryParsed = useMemo(
+    () =>
+      parseVocabularyBulkInput(libraryRawInput, {
+        termDelimiter: libraryTermDelimiter === "tab" ? "\t" : ",",
+        cardDelimiter: libraryCardDelimiter === "newline" ? "\n" : ";"
+      }),
+    [libraryCardDelimiter, libraryRawInput, libraryTermDelimiter]
+  );
 
   const readingHistorySessions = readingAttempts
     .filter((item) => (selectedChapterKey ? item.chapterId === selectedChapterKey : true))
@@ -1535,24 +1547,12 @@ function LibraryScreen({
                   {chapters[selectedChapter].n} · {chapters[selectedChapter].title}
                 </div>
                 <span style={S.tag("neutral", { fontSize: T.fs.xs })}>{sanitizeRows(libraryRows).length} woorden</span>
-                <label style={S.btn("primary", { height: 34, padding: "0 12px", fontSize: T.fs.xs, cursor: "pointer" })}>
+                <button
+                  style={S.btn("primary", { height: 34, padding: "0 12px", fontSize: T.fs.xs })}
+                  onClick={() => setShowLibraryImport(true)}
+                >
                   ↑ Uploaden
-                  <input
-                    type="file"
-                    accept=".txt,.csv,text/plain,text/csv"
-                    style={{ display: "none" }}
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      const text = await file.text();
-                      const parsed = parseVocabularyBulkInput(text, { termDelimiter: "\t", cardDelimiter: "\n" });
-                      if (parsed.rows.length > 0) {
-                        setLibraryRows((current) => sanitizeRows([...current, ...parsed.rows]));
-                      }
-                      event.currentTarget.value = "";
-                    }}
-                  />
-                </label>
+                </button>
                 <button
                   style={S.btn("ghost", { height: 34, padding: "0 10px", fontSize: T.fs.xs })}
                   onClick={() => {
@@ -1591,6 +1591,50 @@ function LibraryScreen({
                   }
                 }}
               />
+              {showLibraryImport ? (
+                <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.38)", zIndex: 1100, padding: 20 }}>
+                  <div style={{ ...S.card({ padding: "16px", width: "100%" }), maxWidth: 960, margin: "0 auto", maxHeight: "88vh", overflowY: "auto" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                      <strong>Importeer je gegevens</strong>
+                      <button style={S.btn("default", { height: 28 })} onClick={() => setShowLibraryImport(false)}>✕</button>
+                    </div>
+                    <div style={{ fontSize: T.fs.sm, color: T.textSec, marginBottom: 8 }}>Kopieer en plak je gegevens hier.</div>
+                    <textarea
+                      value={libraryRawInput}
+                      onChange={(event) => setLibraryRawInput(event.target.value)}
+                      placeholder={"Woord 1\tDefinitie 1\nWoord 2\tDefinitie 2"}
+                      style={{ ...S.input(), minHeight: 150, resize: "vertical", marginBottom: 12 }}
+                    />
+                    <div style={{ display: "flex", gap: 24, marginBottom: 12, fontSize: T.fs.sm }}>
+                      <div>
+                        <div style={{ fontWeight: T.fw.med }}>Tussen term en definitie</div>
+                        <label style={{ display: "block" }}><input type="radio" checked={libraryTermDelimiter === "tab"} onChange={() => setLibraryTermDelimiter("tab")} /> Tab</label>
+                        <label style={{ display: "block" }}><input type="radio" checked={libraryTermDelimiter === "comma"} onChange={() => setLibraryTermDelimiter("comma")} /> Komma</label>
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: T.fw.med }}>Tussen kaarten</div>
+                        <label style={{ display: "block" }}><input type="radio" checked={libraryCardDelimiter === "newline"} onChange={() => setLibraryCardDelimiter("newline")} /> Nieuwe regel</label>
+                        <label style={{ display: "block" }}><input type="radio" checked={libraryCardDelimiter === "semicolon"} onChange={() => setLibraryCardDelimiter("semicolon")} /> Puntkomma</label>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: T.fs.sm, marginBottom: 12 }}>Preview {libraryParsed.rows.length} kaarten</div>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      <button style={S.btn("default")} onClick={() => setShowLibraryImport(false)}>Annuleren</button>
+                      <button
+                        style={S.btn("primary")}
+                        disabled={libraryParsed.rows.length === 0}
+                        onClick={() => {
+                          setLibraryRows((current) => sanitizeRows([...current, ...libraryParsed.rows]));
+                          setLibraryRawInput("");
+                          setShowLibraryImport(false);
+                        }}
+                      >
+                        Importeren
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : tab === "oefenen" ? (
             exercise === "leesvaardigheid" ? (

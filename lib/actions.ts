@@ -11,7 +11,7 @@ type ActionResult<T> = {
 };
 
 type GeneratedReadingQuestion = {
-  type: "meerkeuze" | "open";
+  type: "open";
   question: string;
   options?: string[];
   correctAnswer: string;
@@ -145,7 +145,7 @@ export async function generateReadingContentAction(input: {
 }): Promise<ActionResult<GeneratedReadingContent>> {
   const cleanedRows = input.rows
     .map((row) => [(row[0] ?? "").trim(), (row[1] ?? "").trim()] as [string, string])
-    .filter(([spanish, dutch]) => spanish.length > 0 && dutch.length > 0);
+    .filter(([sourceWord, dutch]) => sourceWord.length > 0 && dutch.length > 0);
 
   if (cleanedRows.length === 0) {
     return { error: "Je woordenlijst is leeg. Voeg eerst woorden toe voordat je een verhaal genereert." };
@@ -159,29 +159,30 @@ export async function generateReadingContentAction(input: {
 
   const totalQuestions = input.durationMinutes <= 5 ? 4 : input.durationMinutes <= 10 ? 6 : input.durationMinutes <= 15 ? 8 : 10;
   const storyLengthInstruction = input.durationMinutes <= 5
-    ? "Schrijf een korte tekst van ongeveer 120-170 woorden (leestijd ±5 minuten)."
+    ? "Schrijf een tekst van ongeveer 675-825 woorden (uitgaande van ±150 woorden per minuut en 5 minuten leestijd)."
     : input.durationMinutes <= 10
-      ? "Schrijf een tekst van ongeveer 180-260 woorden (leestijd ±10 minuten)."
+      ? "Schrijf een tekst van ongeveer 1350-1650 woorden (uitgaande van ±150 woorden per minuut en 10 minuten leestijd)."
       : input.durationMinutes <= 15
-        ? "Schrijf een tekst van ongeveer 270-360 woorden (leestijd ±15 minuten)."
-        : "Schrijf een uitgebreide tekst van ongeveer 370-480 woorden (leestijd 20+ minuten).";
+        ? "Schrijf een tekst van ongeveer 2025-2475 woorden (uitgaande van ±150 woorden per minuut en 15 minuten leestijd)."
+        : "Schrijf een uitgebreide tekst van ongeveer 2700-3300 woorden (uitgaande van ±150 woorden per minuut en 20+ minuten leestijd).";
   const vocabSelection = cleanedRows.slice(0, Math.min(20, cleanedRows.length));
 
   const prompt = [
-    "Maak een Spaanse leesvaardigheidstoets voor een Nederlandse leerling.",
+    "Maak een Spaanse leestekst met Nederlandstalige open vragen voor een Nederlandse leerling.",
     `Hoofdstuk: ${input.chapterLabel}`,
     `Niveau: ${input.level}`,
     `Doelduur: ${input.durationMinutes} minuten`,
     `Aantal vragen: ${totalQuestions}`,
     storyLengthInstruction,
-    "Gebruik alleen woorden uit deze lijst als focus (Spaans -> Nederlands):",
-    ...vocabSelection.map(([sp, nl]) => `- ${sp} -> ${nl}`),
+    "Gebruik deze woordparen als inhoudelijke inspiratie voor de Spaanse tekst (bronwoord -> Nederlandse betekenis):",
+    ...vocabSelection.map(([sourceWord, dutchMeaning]) => `- ${sourceWord} -> ${dutchMeaning}`),
     "Geef ALLEEN geldige JSON met precies dit schema:",
-    '{"storyTitle":"string","story":"string","questions":[{"type":"meerkeuze|open","question":"string","options":["string"],"correctAnswer":"string"}]}',
+    '{"storyTitle":"string","story":"string","questions":[{"type":"open","question":"string","correctAnswer":"string"}]}',
     "Regels:",
-    "- story en vragen moeten in het Spaans/Nederlands passen bij het opgegeven niveau.",
-    "- Meerkeuzevragen moeten exact 4 opties hebben.",
-    "- Open vragen mogen geen options veld hebben.",
+    "- story moet volledig in het Spaans zijn en passen bij het opgegeven niveau.",
+    "- vragen en correctAnswer moeten volledig in het Nederlands zijn.",
+    "- Genereer uitsluitend open vragen (type: open).",
+    "- Gebruik geen meerkeuzevragen en geen options veld.",
     "- correctAnswer moet ingevuld zijn voor elke vraag.",
     `- Lever exact ${totalQuestions} vragen.`,
     "- Houd de verhaaltekst binnen de gevraagde woordlengtebandbreedte."
@@ -213,15 +214,11 @@ export async function generateReadingContentAction(input: {
                     type: "object",
                     additionalProperties: false,
                     properties: {
-                      type: { type: "string", enum: ["meerkeuze", "open"] },
+                      type: { type: "string", enum: ["open"] },
                       question: { type: "string" },
-                      options: {
-                        type: "array",
-                        items: { type: "string" }
-                      },
                       correctAnswer: { type: "string" }
                     },
-                    required: ["type", "question", "options", "correctAnswer"]
+                    required: ["type", "question", "correctAnswer"]
                   }
                 }
               },
@@ -273,30 +270,15 @@ export async function generateReadingContentAction(input: {
       return { error: `OpenAI gaf ${parsed.questions.length} vragen terug, maar ${totalQuestions} zijn vereist.` };
     }
 
-    const normalizedQuestions: GeneratedReadingQuestion[] = parsed.questions.map((q) => {
-      if (q.type === "open") {
-        return {
-          type: "open",
-          question: q.question?.trim() ?? "",
-          correctAnswer: q.correctAnswer?.trim() ?? ""
-        };
-      }
+    const normalizedQuestions: GeneratedReadingQuestion[] = parsed.questions.map((q) => ({
+      type: "open",
+      question: q.question?.trim() ?? "",
+      correctAnswer: q.correctAnswer?.trim() ?? ""
+    }));
 
-      return {
-        type: "meerkeuze",
-        question: q.question?.trim() ?? "",
-        options: (q.options ?? []).map((option) => option.trim()).filter((option) => option.length > 0),
-        correctAnswer: q.correctAnswer?.trim() ?? ""
-      };
-    });
-
-    const invalidMcq = normalizedQuestions.find((question) => {
-      if (question.type !== "meerkeuze") return false;
-      return !question.options || question.options.length !== 4;
-    });
-
-    if (invalidMcq) {
-      return { error: "OpenAI gaf een meerkeuzevraag zonder precies 4 antwoordopties." };
+    const hasInvalidType = parsed.questions.some((question) => question.type !== "open");
+    if (hasInvalidType) {
+      return { error: "OpenAI gaf een niet-open vraag terug. Alleen open vragen zijn toegestaan." };
     }
 
     return {

@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, FormEvent, ReactNode } from "react";
-import { startTransition, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { addChapterAction, generateReadingContentAction, saveProfileAction, saveSettingsAction, signOutAction } from "@/lib/actions";
@@ -2303,7 +2303,7 @@ function VocabularyPanel({
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
               <div>
-                <div style={{ fontSize: T.fs.lg, fontWeight: T.fw.semibold }}>Kaarten importeren</div>
+                <div style={{ fontSize: T.fs.lg, fontWeight: T.fw.semi }}>Kaarten importeren</div>
                 <div style={{ fontSize: T.fs.sm, color: T.textSec }}>Plak je woordparen en controleer direct de preview.</div>
               </div>
               <button
@@ -2326,7 +2326,7 @@ function VocabularyPanel({
             />
 
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginBottom: 14 }}>
-              <fieldset style={{ border: `1px solid ${T.line}`, borderRadius: T.radius.md, padding: 10 }}>
+              <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: T.radius.md, padding: 10 }}>
                 <legend style={{ fontSize: T.fs.sm, color: T.textSec }}>Scheiding binnen kaart</legend>
                 {([
                   ["tab", "Tab"],
@@ -2347,7 +2347,7 @@ function VocabularyPanel({
                 ) : null}
               </fieldset>
 
-              <fieldset style={{ border: `1px solid ${T.line}`, borderRadius: T.radius.md, padding: 10 }}>
+              <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: T.radius.md, padding: 10 }}>
                 <legend style={{ fontSize: T.fs.sm, color: T.textSec }}>Scheiding tussen kaarten</legend>
                 {([
                   ["newline", "Nieuwe regel"],

@@ -11,7 +11,7 @@ import type { AppUser, BootData, JourneyChapter, Screen, UserSettings } from "@/
 import { S, T } from "@/design_handoff_taalreis/taalreis-tokens";
 import { APP_STATE_KEY, DEMO_CHAPTERS_KEY, VIEW_KEY, VOCAB_SYNC_KEY, LIBRARY_VOCAB_BY_CHAPTER_KEY, READING_HISTORY_KEY, PAD, wordRows, reviewSessions, calendarActivity, calendarSessions, practiceCards } from "./taalreis-app/constants";
 import { buildPath, midpointOnPath } from "./taalreis-app/utils/path";
-import { sanitizeRows } from "./taalreis-app/utils/vocabulary";
+import { parseVocabularyBulkInput, sanitizeRows } from "./taalreis-app/utils/vocabulary";
 
 type ReadingQuestion = {
   id: string;
@@ -2281,13 +2281,14 @@ function VocabularyPanel({
 
               if (file.name.toLowerCase().endsWith(".txt")) {
                 const text = await file.text();
-                const parsedRows = text
-                  .split(/\r?\n/)
-                  .map((line) => line.trim())
-                  .filter(Boolean)
-                  .map((line) => line.split(";").map((part) => part.trim()))
-                  .filter((parts) => parts.length === 2) as string[][];
+                const { rows: parsedRows, invalidLines } = parseVocabularyBulkInput(text, {
+                  termDelimiter: ";",
+                  cardDelimiter: /\r?\n/
+                });
                 setRows((current) => sanitizeRows([...current, ...parsedRows]));
+                if (invalidLines.length > 0) {
+                  setErrorMessage(`Sommige regels konden niet worden verwerkt (${invalidLines.length}).`);
+                }
                 setUploadState("idle");
                 return;
               }

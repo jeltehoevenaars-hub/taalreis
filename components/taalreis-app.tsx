@@ -2232,8 +2232,44 @@ function VocabularyPanel({
   setRows: (rows: string[][] | ((current: string[][]) => string[][])) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [rawInput, setRawInput] = useState("");
+  const [termDelimiter, setTermDelimiter] = useState<"tab" | "comma" | "custom">("tab");
+  const [cardDelimiter, setCardDelimiter] = useState<"newline" | "semicolon" | "custom">("newline");
+  const [customTermDelimiter, setCustomTermDelimiter] = useState("");
+  const [customCardDelimiter, setCustomCardDelimiter] = useState("");
+
+  function resetImportModal() {
+    setRawInput("");
+    setTermDelimiter("tab");
+    setCardDelimiter("newline");
+    setCustomTermDelimiter("");
+    setCustomCardDelimiter("");
+  }
+
+  const parsedImportRows = useMemo(() => {
+    const resolvedTermDelimiter =
+      termDelimiter === "tab" ? "\t" : termDelimiter === "comma" ? "," : customTermDelimiter;
+    const resolvedCardDelimiter =
+      cardDelimiter === "newline"
+        ? "\n"
+        : cardDelimiter === "semicolon"
+          ? ";"
+          : customCardDelimiter;
+
+    if (!rawInput.trim() || !resolvedTermDelimiter || !resolvedCardDelimiter) {
+      return [] as string[][];
+    }
+
+    const normalizedSource =
+      resolvedCardDelimiter === "\n" ? rawInput.replace(/\r\n/g, "\n") : rawInput;
+
+    return normalizedSource
+      .split(resolvedCardDelimiter)
+      .map((card) => card.trim())
+      .filter(Boolean)
+      .map((card) => card.split(resolvedTermDelimiter).map((part) => part.trim()))
+      .filter((parts) => parts.length === 2 && parts[0] && parts[1]);
+  }, [cardDelimiter, customCardDelimiter, customTermDelimiter, rawInput, termDelimiter]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -2245,63 +2281,136 @@ function VocabularyPanel({
 
   if (uploadState === "drop") {
     return (
-      <div>
+      <div style={{ position: "relative" }}>
         <div
-          onClick={() => setUploadState("loading")}
           style={{
-            border: `2px dashed ${T.accent}`,
-            borderRadius: T.radius.lg,
-            background: T.accentLight,
-            padding: "48px 32px",
-            textAlign: "center",
-            cursor: "pointer",
-            marginBottom: 20,
-            transition: T.trans
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.38)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000
           }}
         >
-          <div style={{ fontSize: 36, marginBottom: 12 }}>📄</div>
-          <div style={{ fontSize: T.fs.md, fontWeight: T.fw.med, marginBottom: 6 }}>
-            Sleep een foto of scan hierheen
-          </div>
-          <div style={{ fontSize: T.fs.sm, color: T.textSec, marginBottom: 16 }}>
-            of klik om een bestand te kiezen — PNG, TXT
-          </div>
-          <button style={S.btn("primary")} onClick={() => fileInputRef.current?.click()}>
-            Bestand kiezen
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".txt,.png"
-            style={{ display: "none" }}
-            onChange={async (event) => {
-              const file = event.target.files?.[0];
-              if (!file) return;
-              setErrorMessage(null);
-
-              if (file.name.toLowerCase().endsWith(".txt")) {
-                const text = await file.text();
-                const parsedRows = text
-                  .split(/\r?\n/)
-                  .map((line) => line.trim())
-                  .filter(Boolean)
-                  .map((line) => line.split(";").map((part) => part.trim()))
-                  .filter((parts) => parts.length === 2) as string[][];
-                setRows((current) => sanitizeRows([...current, ...parsedRows]));
-                setUploadState("idle");
-                return;
-              }
-
-              if (file.name.toLowerCase().endsWith(".png")) {
-                setErrorMessage("PNG kon niet betrouwbaar worden uitgelezen. Probeer een scherpere scan of upload een .txt-bestand.");
-                setUploadState("idle");
-              }
+          <div
+            style={{
+              ...S.card({ padding: "22px", width: "100%", maxWidth: 700 }),
+              maxHeight: "88vh",
+              overflowY: "auto"
             }}
-          />
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: T.fs.lg, fontWeight: T.fw.semi }}>Kaarten importeren</div>
+                <div style={{ fontSize: T.fs.sm, color: T.textSec }}>Plak je woordparen en controleer direct de preview.</div>
+              </div>
+              <button
+                style={S.btn("default", { height: 30, padding: "0 10px" })}
+                onClick={() => {
+                  resetImportModal();
+                  setUploadState("idle");
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <label style={{ display: "block", fontSize: T.fs.sm, fontWeight: T.fw.med, marginBottom: 6 }}>Ruwe invoer</label>
+            <textarea
+              value={rawInput}
+              onChange={(event) => setRawInput(event.target.value)}
+              placeholder={"hola\thet hallo\nadiós\ttot ziens"}
+              style={{ ...S.input(), minHeight: 140, resize: "vertical", marginBottom: 14 }}
+            />
+
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginBottom: 14 }}>
+              <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: T.radius.md, padding: 10 }}>
+                <legend style={{ fontSize: T.fs.sm, color: T.textSec }}>Scheiding binnen kaart</legend>
+                {([
+                  ["tab", "Tab"],
+                  ["comma", "Komma"],
+                  ["custom", "Aangepast"]
+                ] as const).map(([value, label]) => (
+                  <label key={value} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: T.fs.sm, marginBottom: 6 }}>
+                    <input type="radio" checked={termDelimiter === value} onChange={() => setTermDelimiter(value)} /> {label}
+                  </label>
+                ))}
+                {termDelimiter === "custom" ? (
+                  <input
+                    value={customTermDelimiter}
+                    onChange={(event) => setCustomTermDelimiter(event.target.value)}
+                    placeholder="Bijv. |"
+                    style={S.input()}
+                  />
+                ) : null}
+              </fieldset>
+
+              <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: T.radius.md, padding: 10 }}>
+                <legend style={{ fontSize: T.fs.sm, color: T.textSec }}>Scheiding tussen kaarten</legend>
+                {([
+                  ["newline", "Nieuwe regel"],
+                  ["semicolon", "Puntkomma"],
+                  ["custom", "Aangepast"]
+                ] as const).map(([value, label]) => (
+                  <label key={value} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: T.fs.sm, marginBottom: 6 }}>
+                    <input type="radio" checked={cardDelimiter === value} onChange={() => setCardDelimiter(value)} /> {label}
+                  </label>
+                ))}
+                {cardDelimiter === "custom" ? (
+                  <input
+                    value={customCardDelimiter}
+                    onChange={(event) => setCustomCardDelimiter(event.target.value)}
+                    placeholder="Bijv. ##"
+                    style={S.input()}
+                  />
+                ) : null}
+              </fieldset>
+            </div>
+
+            <div style={{ marginBottom: 12, fontSize: T.fs.sm }}>
+              <strong>Preview {parsedImportRows.length} kaarten</strong>
+            </div>
+            <div style={{ ...S.card({ padding: "10px 12px", marginBottom: 16 }), background: "#fafafa" }}>
+              {parsedImportRows.length ? (
+                <ul style={{ margin: 0, paddingLeft: 16, fontSize: T.fs.sm }}>
+                  {parsedImportRows.slice(0, 4).map((row, index) => (
+                    <li key={`${row[0]}-${index}`} style={{ marginBottom: 4 }}>
+                      {row[0]} → {row[1]}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <span style={{ fontSize: T.fs.sm, color: T.textSec }}>Nog geen geldige kaarten gevonden.</span>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                style={S.btn("primary")}
+                disabled={parsedImportRows.length === 0}
+                onClick={() => {
+                  if (parsedImportRows.length === 0) return;
+                  setRows((current) => sanitizeRows([...current, ...parsedImportRows]));
+                  resetImportModal();
+                  setUploadState("idle");
+                }}
+              >
+                Importeren
+              </button>
+              <button
+                style={S.btn("default")}
+                onClick={() => {
+                  resetImportModal();
+                  setUploadState("idle");
+                }}
+              >
+                Annuleren
+              </button>
+            </div>
+          </div>
         </div>
-        <button style={S.btn("default")} onClick={() => setUploadState("idle")}>
-          Annuleren
-        </button>
       </div>
     );
   }
@@ -2400,11 +2509,6 @@ function VocabularyPanel({
         </button>
         <input style={S.input({ width: 200 })} placeholder="Zoeken…" />
       </div>
-      {errorMessage ? (
-        <div style={{ ...S.card({ marginBottom: 12, padding: "10px 14px" }), border: `1px solid ${T.accent}`, color: T.accent }}>
-          {errorMessage}
-        </div>
-      ) : null}
       <WordTable
         rows={rows}
         onChange={setRows}

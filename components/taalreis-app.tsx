@@ -11,7 +11,7 @@ import type { AppUser, BootData, JourneyChapter, Screen, UserSettings } from "@/
 import { S, T } from "@/design_handoff_taalreis/taalreis-tokens";
 import { APP_STATE_KEY, DEMO_CHAPTERS_KEY, VIEW_KEY, VOCAB_SYNC_KEY, LIBRARY_VOCAB_BY_CHAPTER_KEY, READING_HISTORY_KEY, PAD, wordRows, reviewSessions, calendarActivity, calendarSessions, practiceCards } from "./taalreis-app/constants";
 import { buildPath, midpointOnPath } from "./taalreis-app/utils/path";
-import { sanitizeRows } from "./taalreis-app/utils/vocabulary";
+import { parseVocabularyBulkInput, sanitizeRows } from "./taalreis-app/utils/vocabulary";
 
 type ReadingQuestion = {
   id: string;
@@ -2246,7 +2246,7 @@ function VocabularyPanel({
     setCustomCardDelimiter("");
   }
 
-  const parsedImportRows = useMemo(() => {
+  const parsedImportResult = useMemo(() => {
     const resolvedTermDelimiter =
       termDelimiter === "tab" ? "\t" : termDelimiter === "comma" ? "," : customTermDelimiter;
     const resolvedCardDelimiter =
@@ -2257,19 +2257,34 @@ function VocabularyPanel({
           : customCardDelimiter;
 
     if (!rawInput.trim() || !resolvedTermDelimiter || !resolvedCardDelimiter) {
-      return [] as string[][];
+      return { rows: [] as string[][], invalidLines: [] as string[] };
     }
 
-    const normalizedSource =
-      resolvedCardDelimiter === "\n" ? rawInput.replace(/\r\n/g, "\n") : rawInput;
-
-    return normalizedSource
-      .split(resolvedCardDelimiter)
-      .map((card) => card.trim())
-      .filter(Boolean)
-      .map((card) => card.split(resolvedTermDelimiter).map((part) => part.trim()))
-      .filter((parts) => parts.length === 2 && parts[0] && parts[1]);
+    return parseVocabularyBulkInput(rawInput, {
+      termDelimiter: resolvedTermDelimiter,
+      cardDelimiter: resolvedCardDelimiter
+    });
   }, [cardDelimiter, customCardDelimiter, customTermDelimiter, rawInput, termDelimiter]);
+  const parsedImportRows = parsedImportResult.rows;
+
+  async function handleTxtUpload(file: File) {
+    const text = await file.text();
+    const resolvedTermDelimiter =
+      termDelimiter === "tab" ? "\t" : termDelimiter === "comma" ? "," : customTermDelimiter;
+    const resolvedCardDelimiter =
+      cardDelimiter === "newline"
+        ? "\n"
+        : cardDelimiter === "semicolon"
+          ? ";"
+          : customCardDelimiter;
+
+    const result = parseVocabularyBulkInput(text, {
+      termDelimiter: resolvedTermDelimiter,
+      cardDelimiter: resolvedCardDelimiter
+    });
+
+    setRows((current) => sanitizeRows([...current, ...result.rows]));
+  }
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -2318,6 +2333,17 @@ function VocabularyPanel({
             </div>
 
             <label style={{ display: "block", fontSize: T.fs.sm, fontWeight: T.fw.med, marginBottom: 6 }}>Ruwe invoer</label>
+            <input
+              type="file"
+              accept=".txt,text/plain"
+              style={{ ...S.input(), marginBottom: 10 }}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void handleTxtUpload(file);
+                event.currentTarget.value = "";
+              }}
+            />
             <textarea
               value={rawInput}
               onChange={(event) => setRawInput(event.target.value)}
@@ -2371,6 +2397,11 @@ function VocabularyPanel({
 
             <div style={{ marginBottom: 12, fontSize: T.fs.sm }}>
               <strong>Preview {parsedImportRows.length} kaarten</strong>
+              {parsedImportResult.invalidLines.length ? (
+                <span style={{ marginLeft: 8, color: T.textSec }}>
+                  ({parsedImportResult.invalidLines.length} overgeslagen)
+                </span>
+              ) : null}
             </div>
             <div style={{ ...S.card({ padding: "10px 12px", marginBottom: 16 }), background: "#fafafa" }}>
               {parsedImportRows.length ? (

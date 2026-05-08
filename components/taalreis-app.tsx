@@ -9,7 +9,7 @@ import { defaultChapters } from "@/lib/default-data";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { AppUser, BootData, JourneyChapter, Screen, UserSettings } from "@/lib/types";
 import { S, T } from "@/design_handoff_taalreis/taalreis-tokens";
-import { APP_STATE_KEY, DEMO_CHAPTERS_KEY, VIEW_KEY, VOCAB_SYNC_KEY, LIBRARY_VOCAB_BY_CHAPTER_KEY, READING_HISTORY_KEY, PAD, wordRows, reviewSessions, calendarActivity, calendarSessions, practiceCards } from "./taalreis-app/constants";
+import { APP_STATE_KEY, DEMO_CHAPTERS_KEY, VIEW_KEY, VOCAB_SYNC_KEY, LIBRARY_VOCAB_BY_CHAPTER_KEY, READING_HISTORY_KEY, PAD, wordRows, calendarActivity, calendarSessions, practiceCards } from "./taalreis-app/constants";
 import { buildPath, midpointOnPath } from "./taalreis-app/utils/path";
 import { parseVocabularyBulkInput, sanitizeRows } from "./taalreis-app/utils/vocabulary";
 
@@ -82,6 +82,7 @@ export function TaalreisApp({
   const [user, setUser] = useState<AppUser | null>(initialUser);
   const [chapters, setChapters] = useState<JourneyChapter[]>(initialChapters);
   const [settings, setSettings] = useState<UserSettings>(initialSettings);
+  const [libraryRowsByChapter, setLibraryRowsByChapter] = useState<Record<string, string[][]>>({});
   const [librarySelectedChapterId, setLibrarySelectedChapterId] = useState<string | null>(null);
   const [libraryInitialTab, setLibraryInitialTab] = useState<"vocabulair" | "oefenen" | "geschiedenis">(
     "vocabulair"
@@ -139,6 +140,23 @@ export function TaalreisApp({
 
     window.localStorage.setItem(DEMO_CHAPTERS_KEY, JSON.stringify(chapters));
   }, [chapters, initialUser]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const saved = parseLocalStorageJson<Record<string, string[][]>>(LIBRARY_VOCAB_BY_CHAPTER_KEY);
+    setLibraryRowsByChapter(saved ?? {});
+  }, []);
+
+  const chaptersWithWordCount = useMemo(
+    () =>
+      chapters.map((chapter) => ({
+        ...chapter,
+        total: sanitizeRows(libraryRowsByChapter[chapter.id] ?? []).length
+      })),
+    [chapters, libraryRowsByChapter]
+  );
 
   useEffect(() => {
     if (!supabase) {
@@ -411,7 +429,7 @@ export function TaalreisApp({
       {screen === "Reiskaart" ? (
         <div className="page-enter">
           <JourneyMap
-            chapters={chapters}
+            chapters={chaptersWithWordCount}
             onOpenChapter={(chapter) => {
               setLibrarySelectedChapterId(chapter.id);
               setLibraryInitialTab("vocabulair");
@@ -432,6 +450,7 @@ export function TaalreisApp({
             chapters={chapters}
             selectedChapterId={librarySelectedChapterId}
             initialTab={libraryInitialTab}
+            defaultReadingLevel={settings.level}
           />
         </div>
       ) : null}
@@ -1354,11 +1373,13 @@ function ChapterScreen({
 function LibraryScreen({
   chapters,
   selectedChapterId,
-  initialTab
+  initialTab,
+  defaultReadingLevel
 }: {
   chapters: JourneyChapter[];
   selectedChapterId: string | null;
   initialTab: "vocabulair" | "oefenen" | "geschiedenis";
+  defaultReadingLevel: string;
 }) {
   const [tab, setTab] = useState<"vocabulair" | "oefenen" | "geschiedenis">(initialTab);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
@@ -1368,7 +1389,7 @@ function LibraryScreen({
   const [activeReadingAttemptId, setActiveReadingAttemptId] = useState<string | null>(null);
   const [activeAttemptReadOnly, setActiveAttemptReadOnly] = useState(false);
   const [historyPreviewAttemptId, setHistoryPreviewAttemptId] = useState<string | null>(null);
-  const [readingLevel, setReadingLevel] = useState("A2");
+  const [readingLevel, setReadingLevel] = useState(defaultReadingLevel);
   const [readingDuration, setReadingDuration] = useState(10);
   const [showAnswers, setShowAnswers] = useState(false);
   const [readingGenerateError, setReadingGenerateError] = useState<string | null>(null);
@@ -1449,6 +1470,10 @@ function LibraryScreen({
   }, [initialTab]);
 
   useEffect(() => {
+    setReadingLevel(defaultReadingLevel);
+  }, [defaultReadingLevel]);
+
+  useEffect(() => {
     if (tab !== "oefenen" || !activeAttemptReadOnly) {
       return;
     }
@@ -1490,9 +1515,8 @@ function LibraryScreen({
       attemptId: item.id
     }));
 
-  const allHistorySessions = [...readingHistorySessions, ...reviewSessions];
   const filteredSessions =
-    filter === "Alles" ? allHistorySessions : allHistorySessions.filter((session) => session.type === filter);
+    filter === "Alles" ? readingHistorySessions : readingHistorySessions.filter((session) => session.type === filter);
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, paddingTop: 24 }}>

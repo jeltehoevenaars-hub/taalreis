@@ -6,6 +6,7 @@ type ChapterRow = {
   id: string;
   chapter_number: string;
   title: string;
+  subtitle: string | null;
   progress_percent: number;
   total_words: number;
   is_done: boolean;
@@ -26,6 +27,7 @@ function mapChapter(row: ChapterRow): JourneyChapter {
     id: row.id,
     n: row.chapter_number,
     title: row.title,
+    subtitle: row.subtitle ?? "",
     prog: row.progress_percent,
     total: row.total_words,
     done: row.is_done,
@@ -61,6 +63,7 @@ async function seedDefaultChapters(userId: string) {
       user_id: userId,
       chapter_number: chapter.n,
       title: chapter.title,
+      subtitle: chapter.subtitle,
       progress_percent: chapter.prog,
       total_words: chapter.total,
       is_done: Boolean(chapter.done),
@@ -98,21 +101,33 @@ export async function getBootData(): Promise<BootData> {
     };
   }
 
-  const [{ data: chaptersData, error: chaptersError }, { data: profileData }] =
-    await Promise.all([
-      supabase
-        .from("journey_chapters")
-        .select(
-          "id, chapter_number, title, progress_percent, total_words, is_done, is_active, sort_order"
-        )
-        .eq("user_id", user.id)
-        .order("sort_order"),
-      supabase
-        .from("profiles")
-        .select("full_name, avatar_url, interface_language, level, notifications_enabled")
-        .eq("user_id", user.id)
-        .maybeSingle()
-    ]);
+  const profilePromise = supabase
+    .from("profiles")
+    .select("full_name, avatar_url, interface_language, level, notifications_enabled")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  let { data: chaptersData, error: chaptersError } = await supabase
+    .from("journey_chapters")
+    .select(
+      "id, chapter_number, title, subtitle, progress_percent, total_words, is_done, is_active, sort_order"
+    )
+    .eq("user_id", user.id)
+    .order("sort_order");
+
+  if (chaptersError && chaptersError.message.toLowerCase().includes("subtitle")) {
+    const legacyResult = await supabase
+      .from("journey_chapters")
+      .select(
+        "id, chapter_number, title, progress_percent, total_words, is_done, is_active, sort_order"
+      )
+      .eq("user_id", user.id)
+      .order("sort_order");
+    chaptersData = legacyResult.data as ChapterRow[] | null;
+    chaptersError = legacyResult.error;
+  }
+
+  const { data: profileData } = await profilePromise;
 
   let chapters: JourneyChapter[] = defaultChapters;
 

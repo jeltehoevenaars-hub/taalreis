@@ -19,6 +19,7 @@ create table if not exists public.journey_chapters (
   user_id uuid not null references auth.users(id) on delete cascade,
   chapter_number text not null,
   title text not null,
+  subtitle text not null default '',
   progress_percent integer not null default 0 check (progress_percent >= 0 and progress_percent <= 100),
   total_words integer not null default 0 check (total_words >= 0),
   is_done boolean not null default false,
@@ -29,9 +30,12 @@ create table if not exists public.journey_chapters (
   primary key (user_id, id)
 );
 
--- If an older install still has a global PK on id, migrate it.
-alter table public.journey_chapters drop constraint if exists journey_chapters_pkey;
-alter table public.journey_chapters add constraint journey_chapters_pkey primary key (user_id, id);
+-- Keep PK migration non-destructive: older databases may have FKs depending on the existing PK.
+-- We avoid dropping/recreating the primary key in this script to prevent SQL Editor failures.
+-- Instead, ensure we still have a uniqueness guarantee on (user_id, id) for app-level lookups.
+create unique index if not exists journey_chapters_user_id_id_idx
+  on public.journey_chapters (user_id, id);
+alter table public.journey_chapters add column if not exists subtitle text not null default '';
 
 create unique index if not exists journey_chapters_user_sort_order_idx
   on public.journey_chapters (user_id, sort_order);

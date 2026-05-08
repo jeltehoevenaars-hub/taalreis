@@ -23,9 +23,7 @@ type GeneratedReadingContent = {
   questions: GeneratedReadingQuestion[];
 };
 
-export async function addChapterAction(input: {
-  title: string;
-  insertAfterIndex: number;
+export async function saveChaptersAction(input: {
   chapters: JourneyChapter[];
 }): Promise<ActionResult<JourneyChapter[]>> {
   const supabase = await createServerSupabaseClient();
@@ -42,46 +40,57 @@ export async function addChapterAction(input: {
     return { error: "Je sessie is verlopen. Log opnieuw in." };
   }
 
-  const next = [...input.chapters];
-  const insertAt = input.insertAfterIndex + 1;
-  next.splice(insertAt, 0, {
-    id: crypto.randomUUID(),
-    n: "",
-    title: input.title.trim(),
-    prog: 0,
-    total: 0,
-    sortOrder: insertAt + 1
-  });
-
-  const normalized = next.map((chapter, index) => ({
+  const normalized = input.chapters.map((chapter, index) => ({
     ...chapter,
     n: String(index + 1).padStart(2, "0"),
     sortOrder: index + 1,
+    title: chapter.title.trim(),
+    subtitle: (chapter.subtitle ?? "").trim(),
     active: chapter.active ?? false,
     done: chapter.done ?? false
   }));
 
-  const { error: deleteError } = await supabase.from("journey_chapters").delete().eq("user_id", user.id);
+  const rowsWithSubtitle = normalized.map((chapter) => ({
+    id: chapter.id,
+    user_id: user.id,
+    chapter_number: chapter.n,
+    title: chapter.title,
+    subtitle: chapter.subtitle,
+    progress_percent: chapter.prog,
+    total_words: chapter.total,
+    is_done: Boolean(chapter.done),
+    is_active: Boolean(chapter.active),
+    sort_order: chapter.sortOrder
+  }));
 
-  if (deleteError) {
+  const upsertRows = async (withSubtitle: boolean) => {
+    const payload = withSubtitle
+      ? rowsWithSubtitle
+      : rowsWithSubtitle.map(({ subtitle: _subtitle, ...legacy }) => legacy);
+    return supabase.from("journey_chapters").upsert(payload, {
+      onConflict: "user_id,sort_order"
+    });
+  };
+
+  const { error: upsertError } = await upsertRows(true);
+
+  if (upsertError && upsertError.message.toLowerCase().includes("subtitle")) {
+    const { error: legacyUpsertError } = await upsertRows(false);
+    if (legacyUpsertError) {
+      return { error: "Opslaan van het hoofdstuk is niet gelukt." };
+    }
+  } else if (upsertError) {
     return { error: "Opslaan van het hoofdstuk is niet gelukt." };
   }
 
-  const { error: insertError } = await supabase.from("journey_chapters").insert(
-    normalized.map((chapter) => ({
-      id: chapter.id,
-      user_id: user.id,
-      chapter_number: chapter.n,
-      title: chapter.title,
-      progress_percent: chapter.prog,
-      total_words: chapter.total,
-      is_done: Boolean(chapter.done),
-      is_active: Boolean(chapter.active),
-      sort_order: chapter.sortOrder
-    }))
-  );
+  const chapterIds = normalized.map((chapter) => chapter.id);
+  const { error: cleanupError } = await supabase
+    .from("journey_chapters")
+    .delete()
+    .eq("user_id", user.id)
+    .not("id", "in", `(${chapterIds.map((id) => `\"${id}\"`).join(",")})`);
 
-  if (insertError) {
+  if (cleanupError) {
     return { error: "Opslaan van het hoofdstuk is niet gelukt." };
   }
 

@@ -4,6 +4,7 @@ export type JourneyChapter = {
   id: string;
   n: string;
   title: string;
+  subtitle: string;
   prog: number;
   total: number;
   done?: boolean;

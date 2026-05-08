@@ -282,14 +282,14 @@ export function TaalreisApp({
     if (result.data) setChapters(result.data);
   }
 
-  async function handleAddChapter(title: string, insertAfterIndex: number) {
+  async function handleAddChapter(title: string, subtitle: string, insertAfterIndex: number) {
     if (!supabase || !initialUser) {
       const next = [...chapters];
       next.splice(insertAfterIndex + 1, 0, {
         id: createChapterId("local"),
         n: "",
         title,
-        subtitle: "",
+        subtitle,
         prog: 0,
         total: 0,
         sortOrder: insertAfterIndex + 1
@@ -299,7 +299,7 @@ export function TaalreisApp({
     }
 
     const next = [...chapters];
-    next.splice(insertAfterIndex + 1, 0, { id: createChapterId("remote"), n: "", title, subtitle: "", prog: 0, total: 0, sortOrder: insertAfterIndex + 1 });
+    next.splice(insertAfterIndex + 1, 0, { id: createChapterId("remote"), n: "", title, subtitle, prog: 0, total: 0, sortOrder: insertAfterIndex + 1 });
     await persistChapters(next.map((chapter, index) => ({ ...chapter, n: String(index + 1).padStart(2, "0"), sortOrder: index + 1 })));
   }
 
@@ -795,7 +795,7 @@ function JourneyMap({
 }: {
   chapters: JourneyChapter[];
   onOpenChapter: (chapter: JourneyChapter) => void;
-  onAddChapter: (title: string, insertAfterIndex: number) => Promise<void>;
+  onAddChapter: (title: string, subtitle: string, insertAfterIndex: number) => Promise<void>;
   onEditChapter: (chapterId: string) => Promise<void>;
   onDeleteChapter: (chapterId: string) => Promise<void>;
   variant: "pad" | "tijdlijn";
@@ -875,8 +875,8 @@ function JourneyMap({
           insertAfterIndex={modalState}
           totalChapters={chapters.length}
           onClose={() => setModalState(null)}
-          onConfirm={async (title) => {
-            await onAddChapter(title, modalState);
+          onConfirm={async (title, subtitle) => {
+            await onAddChapter(title, subtitle, modalState);
             setModalState(null);
           }}
         />
@@ -2661,10 +2661,11 @@ function AddChapterModal({
 }: {
   insertAfterIndex: number;
   totalChapters: number;
-  onConfirm: (title: string) => Promise<void>;
+  onConfirm: (title: string, subtitle: string) => Promise<void>;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState("");
+  const [subtitle, setSubtitle] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -2758,7 +2759,35 @@ function AddChapterModal({
               onClose();
             }
             if (event.key === "Enter" && title.trim()) {
-              void onConfirm(title.trim());
+              void onConfirm(title.trim(), subtitle.trim());
+            }
+          }}
+        />
+
+        <label
+          style={{
+            display: "block",
+            fontSize: T.fs.xs,
+            fontWeight: T.fw.med,
+            color: T.textSec,
+            marginBottom: 8,
+            textTransform: "uppercase",
+            letterSpacing: 0.5
+          }}
+        >
+          Subtitel
+        </label>
+        <input
+          value={subtitle}
+          onChange={(event) => setSubtitle(event.target.value)}
+          placeholder="bijv. Nieuwe woorden en zinnen"
+          style={S.input({ width: "100%", marginBottom: 24, fontSize: T.fs.base })}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              onClose();
+            }
+            if (event.key === "Enter" && title.trim()) {
+              void onConfirm(title.trim(), subtitle.trim());
             }
           }}
         />
@@ -2769,7 +2798,7 @@ function AddChapterModal({
           </button>
           <button
             disabled={!title.trim()}
-            onClick={() => void onConfirm(title.trim())}
+            onClick={() => void onConfirm(title.trim(), subtitle.trim())}
             style={{
               ...S.btn("primary", { height: 38 }),
               opacity: title.trim() ? 1 : 0.45,

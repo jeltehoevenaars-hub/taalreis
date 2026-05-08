@@ -88,6 +88,7 @@ export function TaalreisApp({
   );
   const [variant, setVariant] = useState<"pad" | "tijdlijn">("pad");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [editChapterId, setEditChapterId] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = getStoredState();
@@ -305,13 +306,17 @@ export function TaalreisApp({
 
 
   async function handleEditChapter(chapterId: string) {
-    const current = chapters.find((chapter) => chapter.id === chapterId);
-    if (!current) return;
-    const title = window.prompt("Titel", current.title)?.trim();
-    if (!title) return;
-    const subtitle = window.prompt("Subtitel", current.subtitle ?? "")?.trim() ?? "";
-    const next = chapters.map((chapter) => chapter.id === chapterId ? { ...chapter, title, subtitle } : chapter);
+    setEditChapterId(chapterId);
+  }
+
+  async function handleEditChapterConfirm(title: string, subtitle: string) {
+    const chapterId = editChapterId;
+    if (!chapterId) return;
+    const nextTitle = title.trim();
+    if (!nextTitle) return;
+    const next = chapters.map((chapter) => chapter.id === chapterId ? { ...chapter, title: nextTitle, subtitle: subtitle.trim() } : chapter);
     await persistChapters(next);
+    setEditChapterId(null);
   }
 
   async function handleDeleteChapter(chapterId: string) {
@@ -450,6 +455,15 @@ export function TaalreisApp({
       ) : null}
 
       </div>
+
+      {editChapterId ? (
+        <EditChapterModal
+          initialTitle={chapters.find((chapter) => chapter.id === editChapterId)?.title ?? ""}
+          initialSubtitle={chapters.find((chapter) => chapter.id === editChapterId)?.subtitle ?? ""}
+          onClose={() => setEditChapterId(null)}
+          onConfirm={handleEditChapterConfirm}
+        />
+      ) : null}
 
       {isDemoMode ? (
         <div
@@ -2809,6 +2823,102 @@ function AddChapterModal({
           </button>
         </div>
           
+      </div>
+    </div>
+  );
+}
+
+function EditChapterModal({
+  initialTitle,
+  initialSubtitle,
+  onConfirm,
+  onClose
+}: {
+  initialTitle: string;
+  initialSubtitle: string;
+  onConfirm: (title: string, subtitle: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState(initialTitle);
+  const [subtitle, setSubtitle] = useState(initialSubtitle);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    window.setTimeout(() => inputRef.current?.focus(), 60);
+  }, []);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 999,
+        background: "rgba(26,23,20,0.28)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        animation: "fade-in 0.15s ease"
+      }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          background: T.surface,
+          borderRadius: T.radius.lg,
+          boxShadow: "0 8px 40px rgba(26,23,20,0.16)",
+          padding: "32px",
+          width: 420,
+          maxWidth: "90vw",
+          animation: "modal-in 0.18s ease"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
+          <div style={{ fontSize: T.fs.lg, fontWeight: T.fw.semi, marginBottom: 4 }}>Hoofdstuk bewerken</div>
+          <button
+            onClick={onClose}
+            style={{ background: "transparent", cursor: "pointer", color: T.textSec, fontSize: 18, lineHeight: 1, padding: 4, borderRadius: T.radius.sm }}
+          >
+            ×
+          </button>
+        </div>
+        <label style={{ display: "block", fontSize: T.fs.xs, fontWeight: T.fw.med, color: T.textSec, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+          Titel
+        </label>
+        <input
+          ref={inputRef}
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+          style={S.input({ width: "100%", marginBottom: 24, fontSize: T.fs.base })}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") onClose();
+            if (event.key === "Enter" && title.trim()) void onConfirm(title.trim(), subtitle.trim());
+          }}
+        />
+        <label style={{ display: "block", fontSize: T.fs.xs, fontWeight: T.fw.med, color: T.textSec, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+          Subtitel
+        </label>
+        <input
+          value={subtitle}
+          onChange={(event) => setSubtitle(event.target.value)}
+          style={S.input({ width: "100%", marginBottom: 24, fontSize: T.fs.base })}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") onClose();
+            if (event.key === "Enter" && title.trim()) void onConfirm(title.trim(), subtitle.trim());
+          }}
+        />
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <button style={S.btn("default", { height: 38 })} onClick={onClose}>
+            Annuleren
+          </button>
+          <button
+            disabled={!title.trim()}
+            onClick={() => void onConfirm(title.trim(), subtitle.trim())}
+            style={{ ...S.btn("primary", { height: 38 }), opacity: title.trim() ? 1 : 0.45, cursor: title.trim() ? "pointer" : "default" }}
+          >
+            Opslaan
+          </button>
+        </div>
       </div>
     </div>
   );

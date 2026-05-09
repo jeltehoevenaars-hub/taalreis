@@ -391,6 +391,45 @@ export function TaalreisApp({
     }
   }
 
+  async function syncWithDatabase() {
+    if (!supabase || !initialUser || !user) {
+      return;
+    }
+
+    const [chaptersResult, settingsResult, profileResult] = await Promise.all([
+      saveChaptersAction({ chapters }),
+      saveSettingsAction(settings),
+      saveProfileAction({ name: user.name, avatarUrl: user.avatarUrl ?? "" })
+    ]);
+
+    if (chaptersResult.error || settingsResult.error || profileResult.error) {
+      setFeedback(chaptersResult.error ?? settingsResult.error ?? profileResult.error ?? "Synchroniseren mislukt.");
+      return;
+    }
+
+    if (chaptersResult.data) {
+      setChapters(chaptersResult.data);
+    }
+    if (settingsResult.data) {
+      setSettings(settingsResult.data);
+    }
+    if (profileResult.data) {
+      setUser(profileResult.data);
+    }
+  }
+
+  useEffect(() => {
+    if (!supabase || !initialUser || !user) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void syncWithDatabase();
+    }, 5 * 60 * 1000);
+
+    return () => window.clearInterval(interval);
+  }, [chapters, initialUser, settings, supabase, user]);
+
   if (screen === "Login" || !user) {
     return (
       <div className="page-enter">
@@ -468,6 +507,7 @@ export function TaalreisApp({
             settings={settings}
             onSave={handleSaveSettings}
             onSaveProfile={handleSaveProfile}
+            onSyncNow={syncWithDatabase}
             onLogout={handleLogout}
           />
         </div>
@@ -2153,12 +2193,14 @@ function SettingsScreen({
   settings,
   onSave,
   onSaveProfile,
+  onSyncNow,
   onLogout
 }: {
   user: AppUser;
   settings: UserSettings;
   onSave: (settings: UserSettings) => Promise<void>;
   onSaveProfile: (profile: { name: string; avatarUrl: string }) => Promise<void>;
+  onSyncNow: () => Promise<void>;
   onLogout: () => Promise<void>;
 }) {
   const [level, setLevel] = useState(settings.level);
@@ -2232,6 +2274,12 @@ function SettingsScreen({
           <div style={{ display: "flex", gap: 10, paddingTop: 4, flexWrap: "wrap" }}>
             <button style={S.btn("default", { height: 34, fontSize: T.fs.xs })} disabled>
               Wachtwoord wijzigen
+            </button>
+            <button
+              style={S.btn("default", { height: 34, fontSize: T.fs.xs })}
+              onClick={() => void onSyncNow()}
+            >
+              Nu synchroniseren
             </button>
             <button
               style={S.btn("default", { height: 34, fontSize: T.fs.xs, color: T.textSec })}

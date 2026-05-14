@@ -205,6 +205,14 @@ returns trigger
 language plpgsql
 as $$
 begin
+  if not exists (
+    select 1
+    from auth.users u
+    where u.id = old.user_id
+  ) then
+    return old;
+  end if;
+
   if (
     select count(*)
     from public.account_profiles ap

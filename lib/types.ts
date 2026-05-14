@@ -18,6 +18,13 @@ export type AppUser = {
   avatarUrl?: string | null;
 };
 
+export type AccountProfile = {
+  id: string;
+  name: string;
+  slug: string;
+  is_default: boolean;
+};
+
 export type UserSettings = {
   level: string;
   interfaceLanguage: "nl" | "en";
@@ -29,4 +36,6 @@ export type BootData = {
   initialChapters: JourneyChapter[];
   initialSettings: UserSettings;
   supabaseEnabled: boolean;
+  profiles: AccountProfile[];
+  activeProfileId: string | null;
 };

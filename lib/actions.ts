@@ -2,7 +2,35 @@
 
 import { revalidatePath } from "next/cache";
 
+import { cookies } from "next/headers";
+
+import { resolveActiveProfile } from "@/lib/data";
+import { defaultChapters } from "@/lib/default-data";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+
+type AccountProfile = { id: string; name: string; slug: string; is_default: boolean };
+const ACTIVE_PROFILE_COOKIE = "taalreis_active_profile_id";
+
+async function getUserAndActiveProfile() {
+  const supabase = await createServerSupabaseClient();
+  if (!supabase) return { error: "Supabase is niet geconfigureerd." as const };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Je sessie is verlopen. Log opnieuw in." as const };
+  const profileId = await resolveActiveProfile(user.id);
+  if (!profileId) return { error: "Geen actief profiel gevonden." as const };
+  const { data: owned } = await supabase.from("account_profiles").select("id").eq("id", profileId).eq("user_id", user.id).maybeSingle();
+  if (!owned?.id) return { error: "Actief profiel hoort niet bij deze gebruiker." as const };
+  return { supabase, user, profileId };
+}
+
+async function getUserContext() {
+  const supabase = await createServerSupabaseClient();
+  if (!supabase) return { error: "Supabase is niet geconfigureerd." as const };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Je sessie is verlopen. Log opnieuw in." as const };
+  return { supabase, user };
+}
+
 import type { AppUser, JourneyChapter, UserSettings } from "@/lib/types";
 
 type ActionResult<T> = {
@@ -26,19 +54,12 @@ type GeneratedReadingContent = {
 export async function saveChaptersAction(input: {
   chapters: JourneyChapter[];
 }): Promise<ActionResult<JourneyChapter[]>> {
-  const supabase = await createServerSupabaseClient();
-
-  if (!supabase) {
-    return { error: "Supabase is niet geconfigureerd." };
+  const context = await getUserAndActiveProfile();
+  if ("error" in context) {
+    return { error: context.error };
   }
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Je sessie is verlopen. Log opnieuw in." };
-  }
+  const { supabase, user, profileId } = context;
 
   const normalized = input.chapters.map((chapter, index) => ({
     ...chapter,
@@ -67,8 +88,8 @@ export async function saveChaptersAction(input: {
     const payload = withSubtitle
       ? rowsWithSubtitle
       : rowsWithSubtitle.map(({ subtitle: _subtitle, ...legacy }) => legacy);
-    return supabase.from("journey_chapters").upsert(payload, {
-      onConflict: "user_id,sort_order"
+    return supabase.from("journey_chapters").upsert(payload.map((row) => ({ ...row, profile_id: profileId })), {
+      onConflict: "profile_id,sort_order"
     });
   };
 
@@ -88,6 +109,7 @@ export async function saveChaptersAction(input: {
     .from("journey_chapters")
     .delete()
     .eq("user_id", user.id)
+    .eq("profile_id", profileId)
     .not("id", "in", `(${chapterIds.map((id) => `\"${id}\"`).join(",")})`);
 
   if (cleanupError) {
@@ -101,19 +123,12 @@ export async function saveChaptersAction(input: {
 export async function saveSettingsAction(
   settings: UserSettings
 ): Promise<ActionResult<UserSettings>> {
-  const supabase = await createServerSupabaseClient();
-
-  if (!supabase) {
-    return { error: "Supabase is niet geconfigureerd." };
+  const context = await getUserAndActiveProfile();
+  if ("error" in context) {
+    return { error: context.error };
   }
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Je sessie is verlopen. Log opnieuw in." };
-  }
+  const { supabase, user } = context;
 
   const { error } = await supabase.from("profiles").upsert(
     {
@@ -311,19 +326,12 @@ export async function saveProfileAction(input: {
   name: string;
   avatarUrl: string;
 }): Promise<ActionResult<AppUser>> {
-  const supabase = await createServerSupabaseClient();
-
-  if (!supabase) {
-    return { error: "Supabase is niet geconfigureerd." };
+  const context = await getUserAndActiveProfile();
+  if ("error" in context) {
+    return { error: context.error };
   }
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Je sessie is verlopen. Log opnieuw in." };
-  }
+  const { supabase, user } = context;
 
   const cleanedName = input.name.trim() || "Reiziger";
   const cleanedAvatar = input.avatarUrl.trim();
@@ -349,4 +357,55 @@ export async function saveProfileAction(input: {
       avatarUrl: cleanedAvatar || null
     }
   };
+}
+
+
+export async function listProfilesAction(): Promise<ActionResult<{ profiles: AccountProfile[]; activeProfileId: string | null }>> {
+  const context = await getUserAndActiveProfile();
+  if ("error" in context) return { error: context.error };
+  const { supabase, user, profileId } = context;
+  const { data, error } = await supabase.from("account_profiles").select("id, name, slug, is_default").eq("user_id", user.id).order("created_at", { ascending: true });
+  if (error) return { error: "Profielen laden is niet gelukt." };
+  return { data: { profiles: (data ?? []) as AccountProfile[], activeProfileId: profileId } };
+}
+
+export async function switchActiveProfileAction(nextProfileId: string): Promise<ActionResult<{ activeProfileId: string }>> {
+  const context = await getUserAndActiveProfile(); if ("error" in context) return { error: context.error };
+  const { supabase, user } = context;
+  const { data: owned } = await supabase.from("account_profiles").select("id").eq("id", nextProfileId).eq("user_id", user.id).maybeSingle();
+  if (!owned?.id) return { error: "Profiel bestaat niet voor deze gebruiker." };
+  await supabase.from("account_profile_state").upsert({ user_id: user.id, active_profile_id: nextProfileId }, { onConflict: "user_id" });
+  const cookieStore = await cookies();
+  cookieStore.set(ACTIVE_PROFILE_COOKIE, nextProfileId, { path: "/", httpOnly: true, sameSite: "lax" });
+  revalidatePath("/");
+  return { data: { activeProfileId: nextProfileId } };
+}
+
+export async function createProfileAction(name: string): Promise<ActionResult<AccountProfile>> {
+  const context = await getUserContext(); if ("error" in context) return { error: context.error };
+  const { supabase, user } = context;
+  const cleanName = name.trim() || "Nieuw profiel";
+  const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || `profiel-${Date.now()}`;
+  const { data, error } = await supabase.from("account_profiles").insert({ user_id: user.id, name: cleanName, slug, is_default: false }).select("id, name, slug, is_default").single();
+  if (error || !data) return { error: "Profiel aanmaken is niet gelukt." };
+  await seedProfileDefaults(supabase, user.id, data.id);
+  revalidatePath("/");
+  return { data: data as AccountProfile };
+}
+
+async function seedProfileDefaults(supabase: NonNullable<Awaited<ReturnType<typeof createServerSupabaseClient>>>, userId: string, profileId: string) {
+  await supabase.from("journey_chapters").upsert(defaultChapters.map((chapter, index) => ({ id: `${profileId}-${String(index + 1).padStart(2, "0")}`, user_id: userId, profile_id: profileId, chapter_number: chapter.n, title: chapter.title, subtitle: chapter.subtitle, progress_percent: chapter.prog, total_words: chapter.total, is_done: Boolean(chapter.done), is_active: Boolean(chapter.active), sort_order: index + 1 })), { onConflict: "profile_id,sort_order" });
+}
+
+export async function deleteProfileAction(profileId: string): Promise<ActionResult<true>> {
+  const context = await getUserAndActiveProfile(); if ("error" in context) return { error: context.error };
+  const { supabase, user } = context;
+  const { data: profiles } = await supabase.from("account_profiles").select("id, is_default").eq("user_id", user.id);
+  if (!profiles || profiles.length <= 1) return { error: "Je kunt je laatste profiel niet verwijderen." };
+  const owned = profiles.find((p: { id: string }) => p.id === profileId);
+  if (!owned) return { error: "Profiel bestaat niet voor deze gebruiker." };
+  const { error } = await supabase.from("account_profiles").delete().eq("id", profileId).eq("user_id", user.id);
+  if (error) return { error: "Profiel verwijderen is niet gelukt." };
+  revalidatePath("/");
+  return { data: true };
 }

@@ -381,12 +381,33 @@ export async function switchActiveProfileAction(nextProfileId: string): Promise<
   return { data: { activeProfileId: nextProfileId } };
 }
 
-export async function createProfileAction(name: string): Promise<ActionResult<AccountProfile>> {
+export async function createProfileAction(_name: string): Promise<ActionResult<AccountProfile>> {
   const context = await getUserContext(); if ("error" in context) return { error: context.error };
   const { supabase, user } = context;
-  const cleanName = name.trim() || "Nieuw profiel";
-  const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || `profiel-${Date.now()}`;
-  const { data, error } = await supabase.from("account_profiles").insert({ user_id: user.id, name: cleanName, slug, is_default: false }).select("id, name, slug, is_default").single();
+  const baseName = (user.user_metadata.full_name ?? user.email?.split("@")[0] ?? "Reiziger").trim() || "Reiziger";
+  const { data: existingProfiles, error: listError } = await supabase
+    .from("account_profiles")
+    .select("name")
+    .eq("user_id", user.id);
+  if (listError) return { error: "Profiel aanmaken is niet gelukt." };
+
+  const usedNumbers = new Set(
+    (existingProfiles ?? [])
+      .map((profile) => {
+        const match = profile.name.match(new RegExp(`^${baseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/(\\d+)$`));
+        return match ? Number(match[1]) : null;
+      })
+      .filter((value): value is number => value !== null)
+  );
+  let nextNumber = 1;
+  while (usedNumbers.has(nextNumber)) nextNumber += 1;
+  const cleanName = `${baseName}/${nextNumber}`;
+  const slug = `${baseName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "profiel"}-${nextNumber}`;
+  const { data, error } = await supabase
+    .from("account_profiles")
+    .insert({ user_id: user.id, name: cleanName, slug, is_default: false })
+    .select("id, name, slug, is_default")
+    .single();
   if (error || !data) return { error: "Profiel aanmaken is niet gelukt." };
   await seedProfileDefaults(supabase, user.id, data.id);
   revalidatePath("/");

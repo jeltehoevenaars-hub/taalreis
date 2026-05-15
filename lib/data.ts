@@ -73,7 +73,24 @@ export async function getBootData(): Promise<BootData> {
   if (!user) return { initialUser: null, initialChapters: defaultChapters, initialSettings: defaultSettings, supabaseEnabled: true, profiles: [], activeProfileId: null };
 
   const profilePromise = supabase.from("profiles").select("full_name, avatar_url, interface_language, level, notifications_enabled").eq("user_id", user.id).maybeSingle();
-  const accountProfilesPromise = supabase.from("account_profiles").select("id, name, slug, is_default").eq("user_id", user.id).order("created_at", { ascending: true });
+  const { data: profileData } = await profilePromise;
+  const baseName = (profileData?.full_name ?? user.user_metadata.full_name ?? user.email?.split("@")[0] ?? "Reiziger").trim() || "Reiziger";
+
+  const { data: existingProfiles } = await supabase.from("account_profiles").select("id, name, slug, is_default").eq("user_id", user.id).order("created_at", { ascending: true });
+  let profiles: AccountProfile[] = (existingProfiles ?? []) as AccountProfile[];
+  if (profiles.length === 0) {
+    const { data: createdProfile } = await supabase
+      .from("account_profiles")
+      .insert({ user_id: user.id, name: `${baseName}/1`, slug: `${baseName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "profiel"}-1`, is_default: true })
+      .select("id, name, slug, is_default")
+      .single();
+    if (createdProfile) {
+      profiles = [createdProfile as AccountProfile];
+      await supabase.from("account_profile_state").upsert({ user_id: user.id, active_profile_id: createdProfile.id }, { onConflict: "user_id" });
+      await seedDefaultChapters(user.id, createdProfile.id);
+    }
+  }
+
   const activeProfileId = await resolveActiveProfile(user.id);
 
   let chaptersData: ChapterRow[] | null = null;
@@ -83,9 +100,6 @@ export async function getBootData(): Promise<BootData> {
     chaptersData = chapterResult.data as ChapterRow[] | null;
     chaptersError = chapterResult.error as Error | null;
   }
-
-  const [{ data: profileData }, { data: accountProfilesData }] = await Promise.all([profilePromise, accountProfilesPromise]);
-  const profiles: AccountProfile[] = accountProfilesData ?? [];
 
   let chapters: JourneyChapter[] = defaultChapters;
   if (activeProfileId && !chaptersError && chaptersData && chaptersData.length > 0) chapters = chaptersData.map(mapChapter);

@@ -2271,7 +2271,6 @@ function SettingsScreen({
   const [notifications, setNotifications] = useState(settings.notificationsEnabled);
   const [name, setName] = useState(user.name);
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
-  const [newProfileName, setNewProfileName] = useState("");
 
   function persist(next: UserSettings) {
     void onSave(next);
@@ -2387,15 +2386,8 @@ function SettingsScreen({
               );
             })}
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <input value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} placeholder="Nieuwe profielnaam" style={{ ...S.input, flex: 1 }} />
-            <button
-              style={S.btn("primary", { height: 34 })}
-              onClick={() => {
-                void onCreateProfile(newProfileName);
-                setNewProfileName("");
-              }}
-            >
+          <div style={{ marginTop: 12 }}>
+            <button style={S.btn("primary", { height: 34 })} onClick={() => void onCreateProfile("")}>
               Profiel maken
             </button>
           </div>

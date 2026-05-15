@@ -4,7 +4,7 @@ import type { CSSProperties, FormEvent, ReactNode } from "react";
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { generateReadingContentAction, saveChaptersAction, saveProfileAction, saveSettingsAction, signOutAction } from "@/lib/actions";
+import { createProfileAction, deleteProfileAction, generateReadingContentAction, saveChaptersAction, saveProfileAction, saveSettingsAction, signOutAction, switchActiveProfileAction } from "@/lib/actions";
 import { defaultChapters } from "@/lib/default-data";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import type { AppUser, BootData, JourneyChapter, Screen, UserSettings } from "@/lib/types";
@@ -74,7 +74,9 @@ export function TaalreisApp({
   initialUser,
   initialChapters,
   initialSettings,
-  supabaseEnabled
+  supabaseEnabled,
+  profiles: initialProfiles,
+  activeProfileId: initialActiveProfileId
 }: BootData) {
   const router = useRouter();
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
@@ -90,6 +92,8 @@ export function TaalreisApp({
   const [variant, setVariant] = useState<"pad" | "tijdlijn">("pad");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [editChapterId, setEditChapterId] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState(initialProfiles);
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(initialActiveProfileId);
 
   useEffect(() => {
     const saved = getStoredState();
@@ -391,6 +395,50 @@ export function TaalreisApp({
     }
   }
 
+  async function handleCreateProfile(name: string) {
+    const result = await createProfileAction(name);
+    if (result.error || !result.data) {
+      setFeedback(result.error ?? "Profiel aanmaken is niet gelukt.");
+      return;
+    }
+    setProfiles((current) => [...current, result.data!]);
+    setFeedback(null);
+  }
+
+  async function handleSwitchProfile(profileId: string) {
+    const result = await switchActiveProfileAction(profileId);
+    if (result.error || !result.data) {
+      setFeedback(result.error ?? "Profiel wisselen is niet gelukt.");
+      return;
+    }
+    setActiveProfileId(result.data.activeProfileId);
+    setFeedback(null);
+    router.refresh();
+  }
+
+  async function handleDeleteProfile(profileId: string) {
+    if (profiles.length <= 1) {
+      setFeedback("Cannot delete the last profile.");
+      return;
+    }
+    const result = await deleteProfileAction(profileId);
+    if (result.error) {
+      setFeedback(result.error);
+      return;
+    }
+    const nextProfiles = profiles.filter((profile) => profile.id !== profileId);
+    setProfiles(nextProfiles);
+    if (activeProfileId === profileId) {
+      const fallbackId = nextProfiles[0]?.id ?? null;
+      if (fallbackId) {
+        await handleSwitchProfile(fallbackId);
+      } else {
+        setActiveProfileId(null);
+      }
+    }
+    setFeedback(null);
+  }
+
   async function syncWithDatabase() {
     if (!supabase || !initialUser || !user) {
       return;
@@ -505,8 +553,13 @@ export function TaalreisApp({
           <SettingsScreen
             user={user}
             settings={settings}
+            profiles={profiles}
+            activeProfileId={activeProfileId}
             onSave={handleSaveSettings}
             onSaveProfile={handleSaveProfile}
+            onCreateProfile={handleCreateProfile}
+            onSwitchProfile={handleSwitchProfile}
+            onDeleteProfile={handleDeleteProfile}
             onSyncNow={syncWithDatabase}
             onLogout={handleLogout}
           />
@@ -2191,15 +2244,25 @@ function CalendarScreen() {
 function SettingsScreen({
   user,
   settings,
+  profiles,
+  activeProfileId,
   onSave,
   onSaveProfile,
+  onCreateProfile,
+  onSwitchProfile,
+  onDeleteProfile,
   onSyncNow,
   onLogout
 }: {
   user: AppUser;
   settings: UserSettings;
+  profiles: { id: string; name: string; slug: string; is_default: boolean }[];
+  activeProfileId: string | null;
   onSave: (settings: UserSettings) => Promise<void>;
   onSaveProfile: (profile: { name: string; avatarUrl: string }) => Promise<void>;
+  onCreateProfile: (name: string) => Promise<void>;
+  onSwitchProfile: (profileId: string) => Promise<void>;
+  onDeleteProfile: (profileId: string) => Promise<void>;
   onSyncNow: () => Promise<void>;
   onLogout: () => Promise<void>;
 }) {
@@ -2208,6 +2271,7 @@ function SettingsScreen({
   const [notifications, setNotifications] = useState(settings.notificationsEnabled);
   const [name, setName] = useState(user.name);
   const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
+  const [newProfileName, setNewProfileName] = useState("");
 
   function persist(next: UserSettings) {
     void onSave(next);
@@ -2290,6 +2354,50 @@ function SettingsScreen({
           </div>
           <div style={{ fontSize: T.fs.xs, color: T.textSec, marginTop: 10 }}>
             ✓ Ingelogd · synchroniseert automatisch tussen apparaten
+          </div>
+        </SectionCard>
+        <SectionCard title="Profielen">
+          <div style={{ display: "grid", gap: 10 }}>
+            {profiles.map((profile) => {
+              const isActive = profile.id === activeProfileId;
+              const isDeleteDisabled = profiles.length <= 1;
+              return (
+                <div key={profile.id} style={{ ...S.card({ padding: "12px 14px" }), background: isActive ? T.accentLight : T.surface }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                    <div>
+                      <div style={{ fontSize: T.fs.sm, fontWeight: T.fw.med }}>{profile.name}</div>
+                      <div style={{ fontSize: T.fs.xs, color: T.textSec }}>{isActive ? "Actief profiel" : "Niet actief"}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button style={S.btn("default", { height: 30, fontSize: T.fs.xs })} disabled={isActive} onClick={() => void onSwitchProfile(profile.id)}>
+                        Activeren
+                      </button>
+                      <button
+                        style={S.btn("default", { height: 30, fontSize: T.fs.xs, color: isDeleteDisabled ? T.textSec : T.text })}
+                        disabled={isDeleteDisabled}
+                        title={isDeleteDisabled ? "Cannot delete the last profile." : "Profiel verwijderen"}
+                        onClick={() => void onDeleteProfile(profile.id)}
+                      >
+                        Verwijderen
+                      </button>
+                    </div>
+                  </div>
+                  {isDeleteDisabled ? <div style={{ marginTop: 8, fontSize: T.fs.xs, color: T.textSec }}>Cannot delete the last profile.</div> : null}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <input value={newProfileName} onChange={(event) => setNewProfileName(event.target.value)} placeholder="Nieuwe profielnaam" style={{ ...S.input, flex: 1 }} />
+            <button
+              style={S.btn("primary", { height: 34 })}
+              onClick={() => {
+                void onCreateProfile(newProfileName);
+                setNewProfileName("");
+              }}
+            >
+              Profiel maken
+            </button>
           </div>
         </SectionCard>
 

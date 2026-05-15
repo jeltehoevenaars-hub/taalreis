@@ -23,6 +23,14 @@ async function getUserAndActiveProfile() {
   return { supabase, user, profileId };
 }
 
+async function getUserContext() {
+  const supabase = await createServerSupabaseClient();
+  if (!supabase) return { error: "Supabase is niet geconfigureerd." as const };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Je sessie is verlopen. Log opnieuw in." as const };
+  return { supabase, user };
+}
+
 import type { AppUser, JourneyChapter, UserSettings } from "@/lib/types";
 
 type ActionResult<T> = {
@@ -374,7 +382,7 @@ export async function switchActiveProfileAction(nextProfileId: string): Promise<
 }
 
 export async function createProfileAction(name: string): Promise<ActionResult<AccountProfile>> {
-  const context = await getUserAndActiveProfile(); if ("error" in context) return { error: context.error };
+  const context = await getUserContext(); if ("error" in context) return { error: context.error };
   const { supabase, user } = context;
   const cleanName = name.trim() || "Nieuw profiel";
   const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || `profiel-${Date.now()}`;
